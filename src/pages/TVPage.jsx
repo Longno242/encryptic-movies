@@ -18,6 +18,7 @@ import {
   PLAYER_SOURCES,
   getSourceUrl,
   getSourcesForMedia,
+  isAnimePlayerSource,
   sourceSupportsSubDub,
   sourceSupportsProgress,
   sourceProgressViaFrames,
@@ -636,21 +637,20 @@ export default function TVPage({
         .catch(() => {
           if (mounted) setAnilistLoading(false);
         });
-      // Switch to anime source if current source is not an anime source
-      const currentSrc = PLAYER_SOURCES.find((s) => s.id === playerSource);
-      if (!currentSrc?.tag) {
-        const saved = storage.get("playerSource");
-        const savedSrc = PLAYER_SOURCES.find((s) => s.id === saved);
-        setPlayerSource(savedSrc?.tag ? saved : ANIME_DEFAULT_SOURCE);
+      const allowed = new Set(getSourcesForMedia(true).map((s) => s.id));
+      const saved = storage.get("playerSource");
+      if (!allowed.has(playerSource)) {
+        setPlayerSource(allowed.has(saved) ? saved : ANIME_DEFAULT_SOURCE);
       }
     } else {
       setAnilistLoading(false);
-      // Switch back to non-anime source if current source is anime-only
-      const currentSrc = PLAYER_SOURCES.find((s) => s.id === playerSource);
-      if (currentSrc?.tag) {
+      if (isAnimePlayerSource(playerSource)) {
         const saved = storage.get("playerSource");
-        const savedSrc = PLAYER_SOURCES.find((s) => s.id === saved);
-        setPlayerSource(!savedSrc?.tag ? saved : NON_ANIME_DEFAULT_SOURCE);
+        setPlayerSource(
+          saved && !isAnimePlayerSource(saved)
+            ? saved
+            : NON_ANIME_DEFAULT_SOURCE,
+        );
       }
     }
     return () => {

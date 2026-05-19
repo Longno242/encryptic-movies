@@ -141,27 +141,38 @@ export const PLAYER_SOURCES = [
   },
   {
     id: "vidsrc-anime",
-    label: "VidSrc Anime",
+    label: "VidSrc (Anime)",
     tag: "ANIME",
     note: "recommended",
     supportsProgress: true,
     progressViaFrames: true,
     animeOnly: true,
-    movieUrl: (id) => `https://vidsrc.to/embed/anime/${id}/1/1`,
+    movieUrl: (id) => `https://vidsrc.to/embed/movie/${id}`,
     tvUrl: (id, season, ep) =>
-      `https://vidsrc.to/embed/anime/${id}/${season}/${ep}`,
+      `https://vidsrc.to/embed/tv/${id}/${season}/${ep}`,
   },
   {
-    id: "smashy",
-    label: "Smashy",
+    id: "2embed-anime",
+    label: "2Embed (Anime)",
     tag: "ANIME",
     note: null,
     supportsProgress: true,
     progressViaFrames: true,
     animeOnly: true,
-    movieUrl: (id) => `https://player.smashy.stream/movie/${id}`,
+    movieUrl: (id) => `https://www.2embed.online/embed/movie/${id}`,
     tvUrl: (id, season, ep) =>
-      `https://player.smashy.stream/tv/${id}/${season}/${ep}`,
+      `https://www.2embed.online/embed/tv/${id}/${season}/${ep}`,
+  },
+  {
+    id: "videasy-anime",
+    label: "Videasy (Anime)",
+    tag: "ANIME",
+    note: null,
+    supportsProgress: true,
+    animeOnly: true,
+    movieUrl: (id) => `https://player.videasy.net/movie/${id}`,
+    tvUrl: (id, season, ep) =>
+      `https://player.videasy.net/tv/${id}/${season}/${ep}`,
   },
   {
     id: "vidplus",
@@ -176,16 +187,16 @@ export const PLAYER_SOURCES = [
       `https://player.vidplus.to/embed/tv/${id}/${season}/${ep}`,
   },
   {
-    id: "multiembed",
-    label: "MultiEmbed",
+    id: "vidnest",
+    label: "VidNest",
     tag: "ANIME",
     note: null,
     supportsProgress: true,
     progressViaFrames: true,
     animeOnly: true,
-    movieUrl: (id) => `https://multiembed.mov/?video_id=${id}&tmdb=1`,
+    movieUrl: (id) => `https://vidnest.fun/movie/${id}`,
     tvUrl: (id, season, ep) =>
-      `https://multiembed.mov/?video_id=${id}&tmdb=1&s=${season}&e=${ep}`,
+      `https://vidnest.fun/tv/${id}/${season}/${ep}`,
   },
   {
     id: "allmanga",
@@ -204,22 +215,46 @@ function findSource(id) {
   return PLAYER_SOURCES.find((s) => s.id === id) ?? PLAYER_SOURCES[0];
 }
 
+const ANIME_SOURCE_ORDER = [
+  "vidsrc",
+  "vidsrc-anime",
+  "2embed",
+  "2embed-anime",
+  "videasy",
+  "videasy-anime",
+  "vidplus",
+  "vidnest",
+  "allmanga",
+];
+
 /** Sources shown in the player menu for movies vs anime. */
 export function getSourcesForMedia(isAnime) {
-  return PLAYER_SOURCES.filter((s) => {
+  const list = PLAYER_SOURCES.filter((s) => {
     if (s.animeOnly || s.tag === "ANIME") return isAnime;
     return true;
   });
+  if (!isAnime) return list;
+  return [...list].sort((a, b) => {
+    const ia = ANIME_SOURCE_ORDER.indexOf(a.id);
+    const ib = ANIME_SOURCE_ORDER.indexOf(b.id);
+    return (ia === -1 ? 50 : ia) - (ib === -1 ? 50 : ib);
+  });
 }
+
+export const isAnimePlayerSource = (sourceId) => {
+  const s = findSource(sourceId);
+  return !!(s.animeOnly || s.tag === "ANIME");
+};
 
 const SUB_DUB_SOURCES = [
   "vidsrc",
   "vidsrc-anime",
   "2embed",
+  "2embed-anime",
   "videasy",
-  "smashy",
+  "videasy-anime",
   "vidplus",
-  "multiembed",
+  "vidnest",
   "allmanga",
 ];
 
@@ -265,33 +300,24 @@ export const getSourceUrl = (sourceId, type, id, season, ep, opts = {}) => {
     isAnime,
   });
 
-  if (sourceId === "vidsrc" || sourceId === "vidsrc-anime") {
-    if (sourceId === "vidsrc-anime" || (isAnime && type === "movie")) {
-      if (sourceId === "vidsrc") {
-        url =
-          type === "movie"
-            ? `https://vidsrc.to/embed/anime/${id}/1/1`
-            : `https://vidsrc.to/embed/anime/${id}/${season}/${ep}`;
-      }
-    }
+  if (
+    sourceId === "vidsrc" ||
+    sourceId === "vidsrc-anime"
+  ) {
     url = withQuery(url, {
-      dub: dubMode === "dub" ? "1" : "0",
+      ...(isAnime ? { dub: dubMode === "dub" ? "1" : "0" } : {}),
       ds_lang: dsLang,
       autoplay: "1",
     });
-  } else if (sourceId === "2embed") {
+  } else if (sourceId === "2embed" || sourceId === "2embed-anime") {
     url = withQuery(url, {
       lang: dsLang,
       audio: dubMode === "dub" ? "dub" : "sub",
     });
-  } else if (sourceId === "videasy") {
+  } else if (sourceId === "videasy" || sourceId === "videasy-anime") {
     url = withQuery(url, {
       lang: dsLang,
       audioLang: dsLang,
-    });
-  } else if (sourceId === "smashy") {
-    url = withQuery(url, {
-      subLang: preferredLangName,
     });
   } else if (sourceId === "vidplus") {
     url = withQuery(url, {
@@ -300,10 +326,10 @@ export const getSourceUrl = (sourceId, type, id, season, ep, opts = {}) => {
       lang: dsLang,
       default_lang: dsLang,
     });
-  } else if (sourceId === "multiembed") {
+  } else if (sourceId === "vidnest") {
     url = withQuery(url, {
       lang: dsLang,
-      audio: dubMode === "dub" ? "dub" : "sub",
+      ds_lang: dsLang,
     });
   }
 
@@ -326,12 +352,12 @@ export const NEEDS_INTERCEPT = [
   "vidsrc",
   "vidsrc-anime",
   "2embed",
-  "smashy",
+  "2embed-anime",
   "vidplus",
-  "multiembed",
+  "vidnest",
 ];
 
-export const ANIME_DEFAULT_SOURCE = "vidsrc-anime";
+export const ANIME_DEFAULT_SOURCE = "vidsrc";
 export const NON_ANIME_DEFAULT_SOURCE = "vidsrc";
 
 // ── AniList GraphQL ───────────────────────────────────────────────────────────

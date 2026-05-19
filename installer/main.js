@@ -3,7 +3,7 @@
  * Preview: npm run installer:preview
  */
 
-const { app, BrowserWindow, ipcMain, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
 const path = require("path");
 
 const pkg = require("./package.json");
@@ -174,4 +174,10 @@ ipcMain.handle("installer:minimize", () => {
 
 ipcMain.handle("installer:close", () => {
   app.quit();
+});
+
+ipcMain.handle("installer:openExternal", (_evt, url) => {
+  if (url && typeof url === "string") {
+    return shell.openExternal(url);
+  }
 });

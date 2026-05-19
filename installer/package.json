@@ -35,6 +35,10 @@
       "spotlightMovies.js",
       "updateCheck.js",
       "updateConfig.js",
+      {
+        "from": "../github.config.json",
+        "to": "github.config.json"
+      },
       "index.html",
       "installer.css",
       "assets/**/*",

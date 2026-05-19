@@ -13,6 +13,7 @@ import { DEFAULT_INVIDIOUS_BASE } from "../components/TrailerModal";
 import { RATING_COUNTRIES } from "../utils/ageRating";
 import { WarningIcon } from "../components/Icons";
 import { checkForUpdates } from "../utils/updates";
+import { GITHUB_RELEASES_URL } from "../config/github";
 import {
   HOME_ROWS,
   loadHomeLayout,
@@ -670,7 +671,17 @@ function VersionSection() {
           </div>
           <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
             Shows a notification banner if a new version is available. Turned on
-            by default.
+            by default.{" "}
+            <a
+              href="#"
+              style={{ color: "var(--accent)" }}
+              onClick={(e) => {
+                e.preventDefault();
+                window.electron?.openExternal?.(GITHUB_RELEASES_URL);
+              }}
+            >
+              View releases on GitHub
+            </a>
           </div>
         </div>
         {autoSaved && (

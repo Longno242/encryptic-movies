@@ -1,6 +1,12 @@
-/** GitHub release check — disabled when `GITHUB_REPO` is empty. */
+/** GitHub release check — repo from github.config.json at project root. */
 
-export const GITHUB_REPO = "";
+import {
+  GITHUB_REPO,
+  GITHUB_LATEST_RELEASE_URL,
+  GITHUB_RELEASES_URL,
+} from "../config/github.js";
+
+export { GITHUB_REPO, GITHUB_LATEST_RELEASE_URL, GITHUB_RELEASES_URL };
 
 export function normaliseVersion(v) {
   const parts = String(v)
@@ -87,9 +93,7 @@ export async function checkForUpdates() {
   return {
     latest: latestRaw || current,
     current,
-    url:
-      stable.html_url ||
-      `https://github.com/${GITHUB_REPO}/releases/latest`,
+    url: stable.html_url || GITHUB_LATEST_RELEASE_URL,
     changelog: stable.body || "",
     assets: buildAssetMap(stable),
     hasUpdate: latestRaw !== "" && semverGt(latestParts, currentParts),

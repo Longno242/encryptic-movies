@@ -35,4 +35,4 @@ npm run installer:cache-posters
 
 ## Updates
 
-Set `GITHUB_REPO` in `installer/updateConfig.js` for live update checks in the setup app.
+Set `repo` in `github.config.json` at the project root for live update checks (app + installer).

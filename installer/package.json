@@ -4,7 +4,8 @@
   "description": "Encryptic Movies — custom setup wizard",
   "main": "main.js",
   "author": {
-    "name": "Joe"
+    "name": "Joe",
+    "email": "Longno242@users.noreply.github.com"
   },
   "license": "GPL-3.0",
   "private": true,

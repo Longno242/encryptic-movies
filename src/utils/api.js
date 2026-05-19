@@ -16,10 +16,11 @@ export const setApiErrorHandlers = (onAuth, onUnreachable) => {
 // ── TMDB in-memory cache + concurrency gate ───────────────────────────────────
 const memoryCache = new Map();
 const CACHE_LIFETIME_MS = 5 * 60 * 1000;
-const MAX_PARALLEL = 8;
+const MAX_PARALLEL = 12;
 
 let activeRequests = 0;
 const queue = [];
+const inFlight = new Map();
 
 function enterQueue() {
   if (activeRequests < MAX_PARALLEL) {
@@ -62,30 +63,44 @@ export const tmdbFetch = async (path, apiKey) => {
   const hit = readMemoryCache(cacheKey);
   if (hit) return hit;
 
-  await enterQueue();
+  if (inFlight.has(cacheKey)) return inFlight.get(cacheKey);
 
-  let response;
+  const promise = (async () => {
+    await enterQueue();
+    try {
+      const cached = readMemoryCache(cacheKey);
+      if (cached) return cached;
+
+      let response;
+      try {
+        response = await fetch(`${TMDB_ROOT}${path}`, {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        });
+      } catch {
+        onNetworkFailure?.();
+        throw new Error("TMDB unreachable");
+      }
+
+      if (response.status === 401 || response.status === 403) {
+        onAuthFailure?.();
+        throw new Error(`TMDB ${response.status}`);
+      }
+      if (!response.ok) throw new Error(`TMDB ${response.status}`);
+
+      const payload = await response.json();
+      writeMemoryCache(cacheKey, payload);
+      return payload;
+    } finally {
+      leaveQueue();
+    }
+  })();
+
+  inFlight.set(cacheKey, promise);
   try {
-    response = await fetch(`${TMDB_ROOT}${path}`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
-  } catch {
-    leaveQueue();
-    onNetworkFailure?.();
-    throw new Error("TMDB unreachable");
+    return await promise;
+  } finally {
+    inFlight.delete(cacheKey);
   }
-
-  leaveQueue();
-
-  if (response.status === 401 || response.status === 403) {
-    onAuthFailure?.();
-    throw new Error(`TMDB ${response.status}`);
-  }
-  if (!response.ok) throw new Error(`TMDB ${response.status}`);
-
-  const payload = await response.json();
-  writeMemoryCache(cacheKey, payload);
-  return payload;
 };
 
 // ── Streaming embed providers ─────────────────────────────────────────────────

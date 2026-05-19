@@ -52,7 +52,7 @@ import {
   clearDiscordPresence,
 } from "../utils/discordPresence";
 import {
-  fetchMovieRating,
+  ratingFromMovieReleaseDates,
   isRestricted,
   getAgeLimitSetting,
   getRatingCountry,
@@ -113,6 +113,7 @@ export default function MoviePage({
   const [resolvingUrl, setResolvingUrl] = useState(false);
   const [resolveError, setResolveError] = useState(null);
   const [collection, setCollection] = useState(null); // { name, parts }
+  const [movieCredits, setMovieCredits] = useState(null);
   // Webview loading overlay
   const [webviewLoading, setWebviewLoading] = useState(false);
   const { playerFullscreen, toggleFullscreen, exitFullscreen } =
@@ -221,9 +222,25 @@ export default function MoviePage({
 
   useEffect(() => {
     let mounted = true;
-    tmdbFetch(`/movie/${item.id}`, apiKey)
-      .then((d) => {
-        if (mounted) setDetails(d);
+    setMovieCredits(null);
+    setTrailerKey(null);
+    tmdbFetch(
+      `/movie/${item.id}?append_to_response=release_dates,videos,credits`,
+      apiKey,
+    )
+      .then((raw) => {
+        if (!mounted) return;
+        const { release_dates, videos, credits, ...movie } = raw;
+        setDetails(movie);
+        if (release_dates) {
+          setRating(ratingFromMovieReleaseDates(release_dates, ratingCountry));
+        }
+        const videoList = videos?.results || [];
+        const trailer =
+          videoList.find((v) => v.type === "Trailer" && v.site === "YouTube") ||
+          videoList.find((v) => v.site === "YouTube");
+        if (trailer) setTrailerKey(trailer.key);
+        if (credits) setMovieCredits(credits);
       })
       .catch(() => {
         if (mounted) setDetails(item);
@@ -231,34 +248,7 @@ export default function MoviePage({
     return () => {
       mounted = false;
     };
-  }, [item.id, apiKey]);
-
-  useEffect(() => {
-    let mounted = true;
-    fetchMovieRating(item.id, apiKey, ratingCountry).then((r) => {
-      if (mounted) setRating(r);
-    });
-    return () => {
-      mounted = false;
-    };
   }, [item.id, apiKey, ratingCountry]);
-
-  useEffect(() => {
-    let mounted = true;
-    tmdbFetch(`/movie/${item.id}/videos`, apiKey)
-      .then((data) => {
-        if (!mounted) return;
-        const videos = data.results || [];
-        const trailer =
-          videos.find((v) => v.type === "Trailer" && v.site === "YouTube") ||
-          videos.find((v) => v.site === "YouTube");
-        if (trailer) setTrailerKey(trailer.key);
-      })
-      .catch(() => {});
-    return () => {
-      mounted = false;
-    };
-  }, [item.id, apiKey]);
 
   // Fetch movie collection (sequels/prequels)
   useEffect(() => {
@@ -1238,6 +1228,7 @@ export default function MoviePage({
         <MovieCastSection
           movieId={item.id}
           apiKey={apiKey}
+          credits={movieCredits}
           movieTitle={title}
           onSelectPerson={onSelectPerson}
           onSelectMovie={onSelect}

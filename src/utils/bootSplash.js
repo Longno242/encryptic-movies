@@ -1,7 +1,7 @@
 /** Boot / startup screen — step progress and time remaining */
 
-const MIN_SPLASH_MS = 5000;
-const ESTIMATED_TOTAL_MS = 5000;
+const MIN_SPLASH_MS = 1200;
+const ESTIMATED_TOTAL_MS = 2000;
 const STEP_ORDER = ["engine", "secure", "api", "ui"];
 
 const bootStarted =

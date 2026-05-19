@@ -70,7 +70,9 @@ export default function HomePage({
     if (!apiKey || offline) return;
     let cancelled = false;
     setCatalogLoading(true);
-    fetchHomeCatalog(apiKey, {
+    const run = () => {
+      if (cancelled) return;
+      fetchHomeCatalog(apiKey, {
       onUpdate: (partial) => {
         if (!cancelled) setCatalog(partial);
       },
@@ -84,8 +86,15 @@ export default function HomePage({
       .finally(() => {
         if (!cancelled) setCatalogLoading(false);
       });
+    };
+    const idle =
+      typeof requestIdleCallback === "function"
+        ? requestIdleCallback(run, { timeout: 400 })
+        : window.setTimeout(run, 80);
     return () => {
       cancelled = true;
+      if (typeof cancelIdleCallback === "function") cancelIdleCallback(idle);
+      else clearTimeout(idle);
     };
   }, [apiKey, offline]);
 
@@ -285,10 +294,8 @@ export default function HomePage({
   const handleSelectWithFx = useCallback(
     (item, cardKey) => {
       setLaunchingKey(cardKey);
-      window.setTimeout(() => {
-        onSelect(item);
-        setLaunchingKey(null);
-      }, 300);
+      onSelect(item);
+      window.setTimeout(() => setLaunchingKey(null), 280);
     },
     [onSelect],
   );

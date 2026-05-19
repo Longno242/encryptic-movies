@@ -208,14 +208,6 @@ ipcMain.on("player-stopped", () => {
   }
   playerWebContentsIds.clear();
 
-  try {
-    const playerSession = session.fromPartition("persist:player");
-    playerSession.clearCache().catch(() => {});
-    playerSession
-      .clearStorageData({ storages: ["shadercache", "cachestorage"] })
-      .catch(() => {});
-  } catch {}
-
   if (typeof global.gc === "function") global.gc();
   const win = mainWindow;
   if (win && !win.isDestroyed()) {

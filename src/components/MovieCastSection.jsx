@@ -6,6 +6,7 @@ import { fetchMovieCredits, fetchPersonMovieCredits } from "../utils/person";
 export default function MovieCastSection({
   movieId,
   apiKey,
+  credits: creditsProp,
   movieTitle,
   onSelectPerson,
   onSelectMovie,
@@ -23,20 +24,29 @@ export default function MovieCastSection({
   useEffect(() => {
     if (!movieId || !apiKey) return;
     let cancelled = false;
-    setLoading(true);
-    fetchMovieCredits(movieId, apiKey).then((data) => {
-      if (cancelled) return;
-      const top = (data.cast || [])
+
+    const applyCredits = (data) => {
+      const top = (data?.cast || [])
         .filter((c) => c.name)
         .sort((a, b) => (a.order ?? 99) - (b.order ?? 99))
         .slice(0, 18);
       setCast(top);
       setLoading(false);
+    };
+
+    if (creditsProp) {
+      applyCredits(creditsProp);
+      return;
+    }
+
+    setLoading(true);
+    fetchMovieCredits(movieId, apiKey).then((data) => {
+      if (!cancelled) applyCredits(data);
     });
     return () => {
       cancelled = true;
     };
-  }, [movieId, apiKey]);
+  }, [movieId, apiKey, creditsProp]);
 
   useEffect(() => {
     if (!expandedPerson?.id || !apiKey) {

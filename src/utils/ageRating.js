@@ -170,6 +170,10 @@ function pickCertFromTVContentRatings(data, countryCode) {
   return { cert: null, minAge: null };
 }
 
+export function ratingFromMovieReleaseDates(data, countryCode) {
+  return pickCertFromMovieReleaseDates(data, countryCode);
+}
+
 export async function fetchMovieRating(movieId, apiKey, countryCode) {
   try {
     const data = await tmdbGet(`/movie/${movieId}/release_dates`, apiKey);

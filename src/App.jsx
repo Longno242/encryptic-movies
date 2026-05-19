@@ -311,24 +311,19 @@ export default function App() {
   // ── Startup sequence (boot splash steps + secure storage + API check) ──
   useEffect(() => {
     let mounted = true;
-    const delay = (ms) => new Promise((r) => setTimeout(r, ms));
-
     async function runStartup() {
       try {
-        bootStep("Initializing core engine…", 10, "engine");
-        await delay(750);
+        bootStep("Initializing…", 12, "engine");
 
         if (!mounted) return;
-        bootStep("Opening secure credential vault…", 26, "secure");
-        await delay(650);
+        bootStep("Opening secure storage…", 30, "secure");
         const val = await secureStorage.get("apikey");
         if (!mounted) return;
 
-        bootStep("Connecting to TMDB API…", 44, "api");
-        await delay(600);
+        bootStep("Connecting to TMDB…", 50, "api");
 
         if (val) {
-          bootStep("Verifying TMDB API token…", 58, "api");
+          bootStep("Verifying TMDB token…", 65, "api");
           try {
             const res = await fetch(
               "https://api.themoviedb.org/3/configuration",
@@ -348,11 +343,7 @@ export default function App() {
         }
 
         if (!mounted) return;
-        bootStep("Loading saved library & preferences…", 76, "ui");
-        await delay(750);
-
-        bootStep("Preparing user interface…", 92, "ui");
-        await delay(700);
+        bootStep("Loading library…", 88, "ui");
 
         if (!mounted) return;
         setApiKey(val || null);
@@ -375,6 +366,12 @@ export default function App() {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!apiKeyLoaded) return;
+    void import("./pages/MoviePage");
+    void import("./pages/TVPage");
+  }, [apiKeyLoaded]);
 
   // ── Detect platform for Windows titlebar ──────────────────────────────────
   useEffect(() => {

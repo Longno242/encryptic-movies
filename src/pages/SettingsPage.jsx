@@ -3447,9 +3447,10 @@ export default function SettingsPage({
               Preferred language for anime and embedded players.{" "}
               <strong style={{ color: "var(--text)" }}>DUB</strong> uses this
               language; <strong style={{ color: "var(--text)" }}>SUB</strong>{" "}
-              keeps the original audio with subtitles when available. Try{" "}
-              <strong style={{ color: "var(--text)" }}>VidSrc Anime</strong>,{" "}
-              Smashy, or VidPlus if AllManga fails.
+              keeps the original audio with subtitles when available. For anime,
+              start with <strong style={{ color: "var(--text)" }}>VidSrc</strong>{" "}
+              or <strong style={{ color: "var(--text)" }}>2Embed</strong> in the
+              player source menu.
             </div>
             <SettingsSelect
               value={playbackLang}

@@ -1,6 +1,6 @@
 {
   "name": "encryptic-movies-setup",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Encryptic Movies — custom setup wizard",
   "main": "main.js",
   "author": {

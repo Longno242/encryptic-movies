@@ -1,3 +1,5 @@
+import { resolveDsLang, embedLangLabel } from "./playbackLang";
+
 const TMDB_ROOT = "https://api.themoviedb.org/3";
 const TMDB_IMG = "https://image.tmdb.org/t/p";
 
@@ -138,12 +140,61 @@ export const PLAYER_SOURCES = [
       `https://www.2embed.online/embed/tv/${id}/${season}/${ep}`,
   },
   {
-    id: "allmanga",
-    label: "AllManga",
+    id: "vidsrc-anime",
+    label: "VidSrc Anime",
+    tag: "ANIME",
+    note: "recommended",
+    supportsProgress: true,
+    progressViaFrames: true,
+    animeOnly: true,
+    movieUrl: (id) => `https://vidsrc.to/embed/anime/${id}/1/1`,
+    tvUrl: (id, season, ep) =>
+      `https://vidsrc.to/embed/anime/${id}/${season}/${ep}`,
+  },
+  {
+    id: "smashy",
+    label: "Smashy",
     tag: "ANIME",
     note: null,
     supportsProgress: true,
+    progressViaFrames: true,
+    animeOnly: true,
+    movieUrl: (id) => `https://player.smashy.stream/movie/${id}`,
+    tvUrl: (id, season, ep) =>
+      `https://player.smashy.stream/tv/${id}/${season}/${ep}`,
+  },
+  {
+    id: "vidplus",
+    label: "VidPlus",
+    tag: "ANIME",
+    note: null,
+    supportsProgress: true,
+    progressViaFrames: true,
+    animeOnly: true,
+    movieUrl: (id) => `https://player.vidplus.to/embed/movie/${id}`,
+    tvUrl: (id, season, ep) =>
+      `https://player.vidplus.to/embed/tv/${id}/${season}/${ep}`,
+  },
+  {
+    id: "multiembed",
+    label: "MultiEmbed",
+    tag: "ANIME",
+    note: null,
+    supportsProgress: true,
+    progressViaFrames: true,
+    animeOnly: true,
+    movieUrl: (id) => `https://multiembed.mov/?video_id=${id}&tmdb=1`,
+    tvUrl: (id, season, ep) =>
+      `https://multiembed.mov/?video_id=${id}&tmdb=1&s=${season}&e=${ep}`,
+  },
+  {
+    id: "allmanga",
+    label: "AllManga",
+    tag: "ANIME",
+    note: "fallback",
+    supportsProgress: true,
     async: true,
+    animeOnly: true,
     movieUrl: () => "https://allmanga.to",
     tvUrl: () => "https://allmanga.to",
   },
@@ -153,9 +204,28 @@ function findSource(id) {
   return PLAYER_SOURCES.find((s) => s.id === id) ?? PLAYER_SOURCES[0];
 }
 
+/** Sources shown in the player menu for movies vs anime. */
+export function getSourcesForMedia(isAnime) {
+  return PLAYER_SOURCES.filter((s) => {
+    if (s.animeOnly || s.tag === "ANIME") return isAnime;
+    return true;
+  });
+}
+
+const SUB_DUB_SOURCES = [
+  "vidsrc",
+  "vidsrc-anime",
+  "2embed",
+  "videasy",
+  "smashy",
+  "vidplus",
+  "multiembed",
+  "allmanga",
+];
+
 /** Embed sources that honor SUB/DUB via URL params (reload player to apply). */
 export const sourceSupportsSubDub = (sourceId) =>
-  ["vidsrc", "2embed", "videasy", "allmanga"].includes(sourceId);
+  SUB_DUB_SOURCES.includes(sourceId);
 
 function withQuery(url, params) {
   try {
@@ -170,44 +240,70 @@ function withQuery(url, params) {
 }
 
 /**
- * @param {{ dubMode?: 'sub'|'dub', originalLang?: string, reloadToken?: number|string }} [opts]
+ * @param {{
+ *   dubMode?: 'sub'|'dub',
+ *   originalLang?: string,
+ *   preferredLang?: string,
+ *   preferredLangName?: string,
+ *   isAnime?: boolean,
+ *   reloadToken?: number|string,
+ * }} [opts]
  */
 export const getSourceUrl = (sourceId, type, id, season, ep, opts = {}) => {
   const src = findSource(sourceId);
   let url = type === "movie" ? src.movieUrl(id) : src.tvUrl(id, season, ep);
   const dubMode = opts.dubMode === "dub" ? "dub" : "sub";
   const originalLang = (opts.originalLang || "en").slice(0, 2).toLowerCase();
+  const preferredLang = (opts.preferredLang || "en").slice(0, 2).toLowerCase();
+  const preferredLangName =
+    opts.preferredLangName || embedLangLabel(preferredLang);
   const isAnime = !!opts.isAnime;
+  const dsLang = resolveDsLang({
+    dubMode,
+    preferredLang,
+    originalLang,
+    isAnime,
+  });
 
-  if (sourceId === "vidsrc") {
-    if (isAnime && type === "movie") {
-      url = `https://vidsrc.to/embed/anime/${id}/1/1`;
-      url = withQuery(url, {
-        dub: dubMode === "dub" ? "1" : "0",
-        ds_lang: dubMode === "dub" ? "en" : originalLang,
-      });
-    } else {
-      const dsLang =
-        dubMode === "dub"
-          ? "en"
-          : originalLang !== "en"
-            ? originalLang
-            : "en";
-      url = withQuery(url, {
-        ds_lang: dsLang,
-        autoplay: "1",
-        audio: dubMode === "dub" ? "english" : "original",
-      });
+  if (sourceId === "vidsrc" || sourceId === "vidsrc-anime") {
+    if (sourceId === "vidsrc-anime" || (isAnime && type === "movie")) {
+      if (sourceId === "vidsrc") {
+        url =
+          type === "movie"
+            ? `https://vidsrc.to/embed/anime/${id}/1/1`
+            : `https://vidsrc.to/embed/anime/${id}/${season}/${ep}`;
+      }
     }
+    url = withQuery(url, {
+      dub: dubMode === "dub" ? "1" : "0",
+      ds_lang: dsLang,
+      autoplay: "1",
+    });
   } else if (sourceId === "2embed") {
     url = withQuery(url, {
-      lang: dubMode === "dub" ? "en" : originalLang,
+      lang: dsLang,
       audio: dubMode === "dub" ? "dub" : "sub",
     });
   } else if (sourceId === "videasy") {
     url = withQuery(url, {
-      lang: dubMode === "dub" ? "en" : originalLang,
-      audioLang: dubMode === "dub" ? "en" : originalLang,
+      lang: dsLang,
+      audioLang: dsLang,
+    });
+  } else if (sourceId === "smashy") {
+    url = withQuery(url, {
+      subLang: preferredLangName,
+    });
+  } else if (sourceId === "vidplus") {
+    url = withQuery(url, {
+      autoplay: "true",
+      autonext: "true",
+      lang: dsLang,
+      default_lang: dsLang,
+    });
+  } else if (sourceId === "multiembed") {
+    url = withQuery(url, {
+      lang: dsLang,
+      audio: dubMode === "dub" ? "dub" : "sub",
     });
   }
 
@@ -226,9 +322,16 @@ export const sourceProgressViaFrames = (sourceId) =>
 
 export const sourceIsAsync = (sourceId) => findSource(sourceId).async ?? false;
 
-export const NEEDS_INTERCEPT = ["vidsrc", "2embed"];
+export const NEEDS_INTERCEPT = [
+  "vidsrc",
+  "vidsrc-anime",
+  "2embed",
+  "smashy",
+  "vidplus",
+  "multiembed",
+];
 
-export const ANIME_DEFAULT_SOURCE = "allmanga";
+export const ANIME_DEFAULT_SOURCE = "vidsrc-anime";
 export const NON_ANIME_DEFAULT_SOURCE = "vidsrc";
 
 // ── AniList GraphQL ───────────────────────────────────────────────────────────

@@ -12,6 +12,7 @@ import {
   imgUrl,
   PLAYER_SOURCES,
   getSourceUrl,
+  getSourcesForMedia,
   sourceSupportsSubDub,
   sourceSupportsProgress,
   sourceProgressViaFrames,
@@ -24,6 +25,7 @@ import {
 } from "../utils/api";
 import { usePlayerFullscreen } from "../hooks/usePlayerFullscreen";
 import { applyDubInWebview } from "../utils/playerDub";
+import { getPlaybackLang, embedLangLabel } from "../utils/playbackLang";
 import {
   PlayIcon,
   BookmarkIcon,
@@ -167,14 +169,17 @@ export default function MoviePage({
 
   // ── Derived display values (must be declared before any callbacks that use them) ──
   const d = details || item;
+  const playbackLang = getPlaybackLang();
   const embedUrlOpts = useMemo(
     () => ({
       dubMode,
       originalLang: d.original_language || "en",
       isAnime,
       reloadToken: dubReloadNonce,
+      preferredLang: playbackLang,
+      preferredLangName: embedLangLabel(playbackLang),
     }),
-    [dubMode, d.original_language, isAnime, dubReloadNonce],
+    [dubMode, d.original_language, isAnime, dubReloadNonce, playbackLang],
   );
   const title = d.title || d.name;
   const year = (d.release_date || "").slice(0, 4);
@@ -486,7 +491,7 @@ export default function MoviePage({
         sourceSupportsSubDub(playerSource) &&
         !sourceIsAsync(playerSource)
       ) {
-        void applyDubInWebview(wv, dubMode);
+        void applyDubInWebview(wv, dubMode, embedUrlOpts.preferredLangName);
       }
     };
     wv.addEventListener("did-finish-load", done);
@@ -1155,7 +1160,7 @@ export default function MoviePage({
                 style={{ top: menuPos.top, left: menuPos.left }}
                 onClick={(e) => e.stopPropagation()}
               >
-                {PLAYER_SOURCES.map((src) => (
+                {getSourcesForMedia(isAnime).map((src) => (
                   <button
                     key={src.id}
                     className={

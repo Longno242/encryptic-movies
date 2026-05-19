@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld("installerApi", {
   getStatus: (installDir) => ipcRenderer.invoke("installer:getStatus", installDir),
   pickDirectory: (currentPath) =>
     ipcRenderer.invoke("installer:pickDirectory", currentPath),
+  validatePath: (installDir) =>
+    ipcRenderer.invoke("installer:validatePath", installDir),
   runInstall: (opts) => ipcRenderer.invoke("installer:runInstall", opts),
   runRepair: (opts) => ipcRenderer.invoke("installer:runRepair", opts),
   runUninstall: (opts) => ipcRenderer.invoke("installer:runUninstall", opts),

@@ -431,8 +431,12 @@ if (!hasLock) {
   app.whenReady().then(() => {
     logBoot("app ready");
     createMainWindow();
-    void storageIpc.applySecretMigrationIfNeeded();
-    discordIpc.discordRpc.setBrowsing().catch(() => {});
+    setTimeout(() => {
+      void storageIpc.applySecretMigrationIfNeeded();
+    }, 1500);
+    setTimeout(() => {
+      discordIpc.discordRpc.setBrowsing().catch(() => {});
+    }, 3000);
   });
   app.on("before-quit", () => {
     discordIpc.discordRpc.destroy();

@@ -97,12 +97,26 @@ function setSideVersion() {
   refreshStatus();
 }
 
+function showLocationError(message) {
+  const el = $("location-error");
+  if (!el) return;
+  if (message) {
+    el.textContent = message;
+    el.classList.remove("is-hidden");
+  } else {
+    el.textContent = "";
+    el.classList.add("is-hidden");
+  }
+}
+
 function updateExePreview() {
-  const dir = $("install-path")?.value || config.installDir;
+  const dir = ($("install-path")?.value || config.installDir || "").trim();
   config.installDir = dir;
-  config.exePath = joinPath(dir, config.exeName);
+  config.exePath = dir ? joinPath(dir, config.exeName) : "";
   const preview = $("exe-preview-path");
-  if (preview) preview.textContent = config.exePath;
+  if (preview) preview.textContent = config.exePath || "—";
+  showLocationError("");
+  updateFooter();
   refreshStatus();
 }
 
@@ -277,7 +291,9 @@ async function runInstallFlow(mode) {
       }
     }
   } catch (err) {
-    $("install-status-text").textContent = err?.message || "Operation failed.";
+    const msg = err?.message || "Operation failed.";
+    $("install-status-text").textContent = msg;
+    showLocationError(msg);
     $("btn-next").disabled = false;
     stepIndex = 1;
     showPanel("location");
@@ -458,6 +474,8 @@ async function init() {
       updateExePreview();
     }
   });
+  $("install-path")?.addEventListener("input", () => updateExePreview());
+  $("install-path")?.addEventListener("change", () => updateExePreview());
   $("btn-cancel").addEventListener("click", () => window.installerApi.close());
   $("btn-back").addEventListener("click", () => {
     if (stepIndex > 0) {
@@ -491,6 +509,15 @@ async function onNext() {
   }
   if (step.id === "location") {
     updateExePreview();
+    if (!config.installDir) {
+      showLocationError("Choose an install folder (Browse or type a path).");
+      return;
+    }
+    const validation = await window.installerApi.validatePath(config.installDir);
+    if (!validation?.ok) {
+      showLocationError(validation?.error || "This folder cannot be used.");
+      return;
+    }
     await runInstallFlow("install");
     return;
   }

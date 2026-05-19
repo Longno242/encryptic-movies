@@ -138,9 +138,46 @@ function findSource(id) {
   return PLAYER_SOURCES.find((s) => s.id === id) ?? PLAYER_SOURCES[0];
 }
 
-export const getSourceUrl = (sourceId, type, id, season, ep) => {
+/** Embed sources that honor SUB/DUB via URL params (reload player to apply). */
+export const sourceSupportsSubDub = (sourceId) =>
+  ["vidsrc", "2embed", "videasy", "allmanga"].includes(sourceId);
+
+function withQuery(url, params) {
+  try {
+    const u = new URL(url);
+    for (const [key, value] of Object.entries(params)) {
+      if (value != null && value !== "") u.searchParams.set(key, value);
+    }
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * @param {{ dubMode?: 'sub'|'dub', originalLang?: string }} [opts]
+ */
+export const getSourceUrl = (sourceId, type, id, season, ep, opts = {}) => {
   const src = findSource(sourceId);
-  return type === "movie" ? src.movieUrl(id) : src.tvUrl(id, season, ep);
+  let url = type === "movie" ? src.movieUrl(id) : src.tvUrl(id, season, ep);
+  const dubMode = opts.dubMode === "dub" ? "dub" : "sub";
+  const originalLang = (opts.originalLang || "en").slice(0, 2).toLowerCase();
+
+  if (sourceId === "vidsrc") {
+    const dsLang = dubMode === "dub" ? "en" : originalLang;
+    url = withQuery(url, { ds_lang: dsLang });
+  } else if (sourceId === "2embed") {
+    if (dubMode === "dub") url = withQuery(url, { lang: "en" });
+    else if (originalLang && originalLang !== "en") {
+      url = withQuery(url, { lang: originalLang });
+    }
+  } else if (sourceId === "videasy") {
+    url = withQuery(url, {
+      lang: dubMode === "dub" ? "en" : originalLang,
+    });
+  }
+
+  return url;
 };
 
 export const sourceSupportsProgress = (sourceId) =>

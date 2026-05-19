@@ -46,20 +46,6 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  // Warm poster cache in background (local files + slow network fallbacks)
-  const { movies } = require("./spotlightMovies");
-  const { fetchPosterForMovie } = require("./posterFetch");
-  (async () => {
-    for (const m of movies) {
-      try {
-        await fetchPosterForMovie(m);
-      } catch {
-        /* optional online fetch */
-      }
-      await new Promise((r) => setTimeout(r, 800));
-    }
-  })();
-
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -102,6 +88,10 @@ ipcMain.handle("installer:getDefaults", () => {
 
 ipcMain.handle("installer:getStatus", (_evt, installDir) => {
   return engine.getInstallStatus(installDir || getDefaultInstallDir());
+});
+
+ipcMain.handle("installer:validatePath", (_evt, installDir) => {
+  return engine.validateInstallDir(installDir);
 });
 
 ipcMain.handle("installer:pickDirectory", async (_evt, currentPath) => {

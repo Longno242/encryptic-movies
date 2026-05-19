@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld("installerApi", {
   launchApp: (exePath) => ipcRenderer.invoke("installer:launchApp", exePath),
   checkUpdates: (installDir) =>
     ipcRenderer.invoke("installer:checkUpdates", installDir),
+  openExternal: (url) => ipcRenderer.invoke("installer:openExternal", url),
   fetchPoster: (url) => ipcRenderer.invoke("installer:fetchPoster", url),
   minimize: () => ipcRenderer.invoke("installer:minimize"),
   close: () => ipcRenderer.invoke("installer:close"),

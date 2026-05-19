@@ -348,8 +348,21 @@ function resetUpdateOverlay() {
   $("update-message").textContent = "";
   $("update-versions").classList.add("is-hidden");
   $("update-changelog").classList.add("is-hidden");
+  $("update-github-link-wrap")?.classList.add("is-hidden");
   $("update-progress-wrap").classList.add("is-hidden");
   $("update-btn-install").classList.add("is-hidden");
+}
+
+function showUpdateGithubLink(releaseUrl) {
+  const wrap = $("update-github-link-wrap");
+  const link = $("update-github-link");
+  if (!wrap || !link || !releaseUrl) return;
+  link.href = releaseUrl;
+  link.onclick = (e) => {
+    e.preventDefault();
+    window.installerApi?.openExternal?.(releaseUrl);
+  };
+  wrap.classList.remove("is-hidden");
 }
 
 async function runUpdateCheck() {
@@ -366,13 +379,15 @@ async function runUpdateCheck() {
     if (!result.hasUpdate) {
       $("update-title").textContent = "You're up to date";
       $("update-message").textContent = `v${result.current} is the latest.`;
+      if (result.releaseUrl) showUpdateGithubLink(result.releaseUrl);
       return;
     }
 
     $("update-title").textContent = result.isDemo ? "Update preview" : "Update ready";
     $("update-message").textContent = result.isDemo
-      ? "Demo update — connect GitHub in installer/updateConfig.js for real releases."
-      : `Upgrade from v${result.current} to v${result.latest}.`;
+      ? "Demo update — connect GitHub in github.config.json for real releases."
+      : `Upgrade from v${result.current} to v${result.latest}. Download the new build from GitHub if repair does not apply.`;
+    if (result.releaseUrl) showUpdateGithubLink(result.releaseUrl);
     $("update-current").textContent = `v${result.current}`;
     $("update-latest").textContent = `v${result.latest}`;
     $("update-versions").classList.remove("is-hidden");

@@ -103,13 +103,14 @@
             </p>
             <label class="installer-field-label" for="install-path">Destination</label>
             <div class="installer-path-row">
-              <input type="text" id="install-path" class="installer-path-input" readonly spellcheck="false" />
+              <input type="text" id="install-path" class="installer-path-input" spellcheck="false" autocomplete="off" />
               <button type="button" class="installer-btn installer-btn--secondary" id="btn-browse">Browse</button>
             </div>
             <p class="installer-exe-preview">
               <span>Executable</span>
               <code id="exe-preview-path">—</code>
             </p>
+            <p class="installer-note installer-note--error is-hidden" id="location-error" role="alert"></p>
             <p class="installer-note installer-note--subtle is-hidden" id="location-preview-hint">
               Developer preview only — run <code>npm run dist:win-setup</code> to build the real setup installer.
             </p>

@@ -91,19 +91,64 @@ function readVersionFile(installDir) {
   }
 }
 
-function copyPayload(destExe, onProgress) {
+function validateInstallDir(installDir) {
+  if (!installDir || typeof installDir !== "string") {
+    return { ok: false, error: "Choose an install folder first." };
+  }
+  try {
+    fs.mkdirSync(installDir, { recursive: true });
+    const testFile = path.join(installDir, ".encryptic-write-test");
+    fs.writeFileSync(testFile, "ok", "utf8");
+    fs.unlinkSync(testFile);
+    return { ok: true };
+  } catch (err) {
+    if (err.code === "EACCES") {
+      return {
+        ok: false,
+        error:
+          "Cannot write to this folder. Pick Downloads or another folder you own (avoid Program Files).",
+      };
+    }
+    return { ok: false, error: err.message || "Folder is not writable." };
+  }
+}
+
+async function copyPayload(destExe, onProgress) {
   const src = getPayloadPath();
   if (!src) {
     throw new Error(
       "App package not found. Rebuild with: npm run dist:win-setup",
     );
   }
-  onProgress?.({ pct: 20, label: "Copying application files…" });
+  const total = fs.statSync(src).size;
+  if (!total) throw new Error("Install package is empty. Re-download the setup.");
+
+  onProgress?.({ pct: 10, label: "Copying application files…" });
   fs.mkdirSync(path.dirname(destExe), { recursive: true });
-  fs.copyFileSync(src, destExe);
-  onProgress?.({ pct: 70, label: "Verifying installation…" });
+
+  await new Promise((resolve, reject) => {
+    let copied = 0;
+    const read = fs.createReadStream(src);
+    const write = fs.createWriteStream(destExe);
+    read.on("data", (chunk) => {
+      copied += chunk.length;
+      const pct = 10 + Math.min(60, Math.round((copied / total) * 60));
+      onProgress?.({
+        pct,
+        label: `Copying… ${Math.round((copied / total) * 100)}%`,
+      });
+    });
+    read.on("error", reject);
+    write.on("error", reject);
+    write.on("finish", resolve);
+    read.pipe(write);
+  });
+
+  onProgress?.({ pct: 75, label: "Verifying installation…" });
   const st = fs.statSync(destExe);
-  if (!st.size) throw new Error("Copy failed — file is empty.");
+  if (st.size !== total) {
+    throw new Error("Copy failed — file size mismatch. Try again or pick another folder.");
+  }
   return src;
 }
 
@@ -165,7 +210,7 @@ async function install(options, onProgress) {
   onProgress?.({ pct: 5, label: "Preparing folder…" });
   fs.mkdirSync(installDir, { recursive: true });
 
-  copyPayload(destExe, onProgress);
+  await copyPayload(destExe, onProgress);
 
   onProgress?.({ pct: 80, label: "Writing install info…" });
   writeManifest(installDir, version);
@@ -231,6 +276,7 @@ module.exports = {
   getPayloadPath,
   getAppUserDataDir,
   getInstallStatus,
+  validateInstallDir,
   install,
   repair,
   uninstall,

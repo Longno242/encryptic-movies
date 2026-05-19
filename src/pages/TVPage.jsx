@@ -17,6 +17,7 @@ import {
   imgUrl,
   PLAYER_SOURCES,
   getSourceUrl,
+  sourceSupportsSubDub,
   sourceSupportsProgress,
   sourceProgressViaFrames,
   sourceIsAsync,
@@ -403,7 +404,7 @@ export default function TVPage({
     [playerSource],
   );
   const [dubMode, setDubMode] = useState(
-    () => storage.get("allmangaDubMode") || "sub",
+    () => storage.get(STORAGE_KEYS.ALLMANGA_DUB_MODE) || "sub",
   );
   // async URL resolution
   const [resolvedPlayerUrl, setResolvedPlayerUrl] = useState(null);
@@ -750,6 +751,13 @@ export default function TVPage({
   }, []);
 
   const d = details || item;
+  const embedUrlOpts = useMemo(
+    () => ({
+      dubMode,
+      originalLang: d.original_language || "en",
+    }),
+    [dubMode, d.original_language],
+  );
   const discordPresenceRef = useRef({ title: "", posterUrl: "" });
   discordPresenceRef.current = {
     title: d.name || d.title || "TV Show",
@@ -1743,6 +1751,7 @@ export default function TVPage({
                             item.id,
                             playerEp.season,
                             playerEp.episode,
+                            embedUrlOpts,
                           )
                   }
                   partition="persist:player"
@@ -1781,21 +1790,25 @@ export default function TVPage({
                     {PLAYER_SOURCES.find((s) => s.id === playerSource)?.label ??
                       "Source"}
                   </button>
-                  {/* Sub/Dub toggle, only for AllManga */}
-                  {playerSource === "allmanga" && (
+                  {sourceSupportsSubDub(playerSource) && (
                     <button
                       className="player-overlay-btn"
                       onClick={() => {
                         const next = dubMode === "sub" ? "dub" : "sub";
                         setDubMode(next);
-                        storage.set("allmangaDubMode", next);
+                        storage.set(STORAGE_KEYS.ALLMANGA_DUB_MODE, next);
                         setM3u8Url(null);
                         setInterceptedSubs([]);
                         setResolvedPlayerUrl(null);
                         setResolvingUrl(false);
                         setResolveError(null);
+                        if (playerSource !== "allmanga") setWebviewLoading(true);
                       }}
-                      title="Toggle Sub/Dub"
+                      title={
+                        dubMode === "sub"
+                          ? "Subtitles / original audio — switch to dubbed"
+                          : "Dubbed audio — switch to subtitles / original"
+                      }
                     >
                       {dubMode === "sub" ? "SUB" : "DUB"}
                     </button>
@@ -1844,6 +1857,7 @@ export default function TVPage({
                             item.id,
                             playerEp.season,
                             playerEp.episode,
+                            embedUrlOpts,
                           );
                       if (!url) return;
                       pipUrlRef.current = url;

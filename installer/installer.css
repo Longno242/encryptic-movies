@@ -612,6 +612,12 @@ body {
   background: rgba(255, 255, 255, 0.02);
 }
 
+.installer-note--error {
+  background: rgba(220, 60, 60, 0.12);
+  border: 1px solid rgba(220, 60, 60, 0.35);
+  color: #ffb4b4;
+}
+
 .installer-field-label {
   display: block;
   margin-bottom: 8px;

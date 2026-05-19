@@ -1,6 +1,6 @@
 {
   "name": "encryptic-movies-setup",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Encryptic Movies — custom setup wizard",
   "main": "main.js",
   "author": {
@@ -21,7 +21,7 @@
     "appId": "com.encryptic.movies.setup",
     "productName": "Encryptic Movies Setup",
     "asar": true,
-    "compression": "maximum",
+    "compression": "normal",
     "directories": {
       "output": "../dist",
       "buildResources": "../build"

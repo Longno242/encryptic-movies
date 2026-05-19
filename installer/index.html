@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Encryptic Movies Setup</title>
+    <link rel="stylesheet" href="installer.css" />
+  </head>
+  <body>
+    <div class="installer" id="installer-root">
+      <header class="installer-chrome" data-drag-region>
+        <div class="installer-chrome__brand" data-drag-region>
+          <img class="installer-chrome__logo" src="assets/encryptic-logo.png" alt="" width="22" height="22" />
+          <span>Encryptic Movies</span>
+        </div>
+        <div class="installer-chrome__controls">
+          <button type="button" class="win-btn" id="btn-minimize" title="Minimize" aria-label="Minimize">
+            <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 5h8" stroke="currentColor" stroke-width="1" /></svg>
+          </button>
+          <button type="button" class="win-btn win-btn--close" id="btn-win-close" title="Close" aria-label="Close">
+            <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1l8 8M9 1L1 9" stroke="currentColor" stroke-width="1" /></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="installer-body">
+        <aside class="installer-side">
+          <div class="installer-showcase" id="movie-showcase">
+            <img
+              class="installer-showcase__img"
+              id="showcase-img"
+              alt=""
+            />
+            <div class="installer-showcase__scrim" aria-hidden="true"></div>
+            <div class="installer-showcase__content">
+              <p class="installer-showcase__eyebrow">Now streaming</p>
+              <h2 class="installer-showcase__title" id="showcase-title">—</h2>
+              <p class="installer-showcase__year" id="showcase-year"></p>
+            </div>
+            <div class="installer-showcase__dots" id="showcase-dots" aria-hidden="true"></div>
+          </div>
+
+          <div class="installer-side__hero">
+            <h3 class="installer-side__tagline" id="side-tagline">Every iconic film. One home screen.</h3>
+            <p class="installer-side__subtitle" id="side-subtitle"></p>
+          </div>
+
+          <div class="installer-side__version">
+            <span class="installer-side__version-label">Status</span>
+            <strong id="side-installed-version">Not installed</strong>
+          </div>
+
+          <div class="installer-side__actions">
+            <button type="button" class="installer-side__btn" id="btn-check-updates">
+              <span class="installer-side__btn-icon">↻</span> Check for updates
+            </button>
+            <button type="button" class="installer-side__btn installer-side__btn--repair" id="btn-repair">
+              <span class="installer-side__btn-icon">⚙</span> Repair install
+            </button>
+            <button type="button" class="installer-side__btn installer-side__btn--danger" id="btn-uninstall">
+              <span class="installer-side__btn-icon">✕</span> Uninstall
+            </button>
+          </div>
+        </aside>
+
+        <main class="installer-main">
+          <nav class="installer-steps" id="step-nav" aria-label="Setup steps"></nav>
+
+          <section class="installer-panel" id="panel-welcome" data-step="welcome">
+            <p class="installer-eyebrow">Welcome</p>
+            <h1>Your screen. Every hit.</h1>
+            <p class="installer-lead">
+              Install <strong id="app-name-welcome">Encryptic Movies</strong> — blockbusters, classics,
+              and series in one cinematic app.
+            </p>
+            <div class="installer-cards">
+              <article class="installer-card">
+                <span class="installer-card__icon">🎬</span>
+                <h3>Watch anything</h3>
+                <p>Discover trending films and legendary favorites.</p>
+              </article>
+              <article class="installer-card">
+                <span class="installer-card__icon">📁</span>
+                <h3>Your install</h3>
+                <p>Pick a folder — defaults to Downloads.</p>
+              </article>
+              <article class="installer-card">
+                <span class="installer-card__icon">💾</span>
+                <h3>Repair safe</h3>
+                <p>Fix broken files without losing watch history.</p>
+              </article>
+            </div>
+            <p class="installer-note installer-note--subtle is-hidden" id="payload-warning">
+              Developer mode: build the app with <code>npm run dist:win-setup</code> to bundle the installer.
+            </p>
+          </section>
+
+          <section class="installer-panel installer-panel--hidden" id="panel-location" data-step="location">
+            <p class="installer-eyebrow">Location</p>
+            <h1>Install folder</h1>
+            <p class="installer-lead">
+              <strong id="exe-name-label">Encryptic Movies.exe</strong> will be placed here.
+            </p>
+            <label class="installer-field-label" for="install-path">Destination</label>
+            <div class="installer-path-row">
+              <input type="text" id="install-path" class="installer-path-input" readonly spellcheck="false" />
+              <button type="button" class="installer-btn installer-btn--secondary" id="btn-browse">Browse</button>
+            </div>
+            <p class="installer-exe-preview">
+              <span>Executable</span>
+              <code id="exe-preview-path">—</code>
+            </p>
+            <p class="installer-note installer-note--subtle is-hidden" id="location-preview-hint">
+              Developer preview only — run <code>npm run dist:win-setup</code> to build the real setup installer.
+            </p>
+            <div class="installer-options">
+              <label class="installer-check">
+                <input type="checkbox" id="opt-desktop" checked />
+                <span class="installer-check__box"></span>
+                <span>Desktop shortcut</span>
+              </label>
+              <label class="installer-check">
+                <input type="checkbox" id="opt-startmenu" checked />
+                <span class="installer-check__box"></span>
+                <span>Start menu</span>
+              </label>
+              <label class="installer-check">
+                <input type="checkbox" id="opt-open" checked />
+                <span class="installer-check__box"></span>
+                <span>Launch when finished</span>
+              </label>
+            </div>
+          </section>
+
+          <section class="installer-panel installer-panel--hidden" id="panel-install" data-step="install">
+            <p class="installer-eyebrow">Progress</p>
+            <h1 id="install-heading">Installing</h1>
+            <p class="installer-lead" id="install-status-text">Preparing…</p>
+            <div class="installer-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="install-progress">
+              <div class="installer-progress__fill" id="install-progress-fill"></div>
+              <div class="installer-progress__shine" aria-hidden="true"></div>
+            </div>
+            <p class="installer-progress-pct" id="install-progress-pct">0%</p>
+            <ul class="installer-task-list" id="install-task-list"></ul>
+          </section>
+
+          <section class="installer-panel installer-panel--hidden" id="panel-done" data-step="done">
+            <div class="installer-done-icon" aria-hidden="true">✓</div>
+            <p class="installer-eyebrow">Complete</p>
+            <h1>Ready to watch</h1>
+            <p class="installer-lead"><strong id="app-name-done">Encryptic Movies</strong> is installed at:</p>
+            <p class="installer-done-path"><code id="done-exe-path">—</code></p>
+            <p class="installer-note" id="done-shortcuts-note"></p>
+          </section>
+
+          <footer class="installer-footer">
+            <button type="button" class="installer-btn installer-btn--ghost" id="btn-cancel">Cancel</button>
+            <div class="installer-footer__right">
+              <button type="button" class="installer-btn installer-btn--secondary is-hidden" id="btn-back">Back</button>
+              <button type="button" class="installer-btn installer-btn--primary" id="btn-next">Continue</button>
+            </div>
+          </footer>
+        </main>
+      </div>
+
+      <!-- Update -->
+      <div class="installer-modal-overlay is-hidden" id="update-overlay" role="dialog" aria-modal="true">
+        <div class="installer-modal">
+          <button type="button" class="installer-modal__x" id="update-close" aria-label="Close">×</button>
+          <h2 id="update-title">Checking…</h2>
+          <p class="installer-lead" id="update-message"></p>
+          <div class="installer-update-versions is-hidden" id="update-versions">
+            <div><span>Installed</span><strong id="update-current">—</strong></div>
+            <div><span>Available</span><strong id="update-latest">—</strong></div>
+          </div>
+          <pre class="installer-update-changelog is-hidden" id="update-changelog"></pre>
+          <div class="installer-update-progress is-hidden" id="update-progress-wrap">
+            <div class="installer-progress"><div class="installer-progress__fill" id="update-progress-fill"></div></div>
+            <p class="installer-progress-pct" id="update-progress-label">0%</p>
+          </div>
+          <div class="installer-modal__actions">
+            <button type="button" class="installer-btn installer-btn--ghost" id="update-btn-dismiss">Close</button>
+            <button type="button" class="installer-btn installer-btn--primary is-hidden" id="update-btn-install">Install update</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Repair confirm -->
+      <div class="installer-modal-overlay is-hidden" id="repair-overlay" role="dialog" aria-modal="true">
+        <div class="installer-modal">
+          <button type="button" class="installer-modal__x" data-close="repair-overlay" aria-label="Close">×</button>
+          <h2>Repair installation?</h2>
+          <p class="installer-lead">
+            Reinstalls <strong>Encryptic Movies.exe</strong> and shortcuts. Your watch history, library,
+            and settings in AppData are <strong>not</strong> removed.
+          </p>
+          <div class="installer-modal__actions">
+            <button type="button" class="installer-btn installer-btn--ghost" data-close="repair-overlay">Cancel</button>
+            <button type="button" class="installer-btn installer-btn--primary" id="repair-confirm">Repair now</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Uninstall confirm -->
+      <div class="installer-modal-overlay is-hidden" id="uninstall-overlay" role="dialog" aria-modal="true">
+        <div class="installer-modal">
+          <button type="button" class="installer-modal__x" data-close="uninstall-overlay" aria-label="Close">×</button>
+          <h2>Uninstall Encryptic Movies?</h2>
+          <p class="installer-lead">Removes the app from your install folder and deletes shortcuts.</p>
+          <label class="installer-check installer-check--danger">
+            <input type="checkbox" id="opt-remove-data" />
+            <span class="installer-check__box"></span>
+            <span>Also delete watch history &amp; settings (AppData)</span>
+          </label>
+          <div class="installer-modal__actions">
+            <button type="button" class="installer-btn installer-btn--ghost" data-close="uninstall-overlay">Cancel</button>
+            <button type="button" class="installer-btn installer-btn--danger" id="uninstall-confirm">Uninstall</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script src="wizard.js"></script>
+  </body>
+</html>

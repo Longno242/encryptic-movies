@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Encryptic Movies</title>
+        <link rel="icon" type="image/png" href="/encryptic-logo.png" />
+    </head>
+    <body>
+        <div id="boot-splash" aria-live="polite" aria-busy="true" data-progress="0">
+            <div class="boot-splash-mesh" aria-hidden="true"></div>
+            <div class="boot-splash-grid" aria-hidden="true"></div>
+            <div class="boot-splash-scan" aria-hidden="true"></div>
+            <div class="boot-splash-inner">
+                <p class="boot-splash-heading">Starting up</p>
+                <div class="boot-splash-logo-wrap">
+                    <img
+                        src="/encryptic-logo.png"
+                        alt=""
+                        class="boot-splash-logo"
+                        width="200"
+                        height="200"
+                    />
+                </div>
+                <p class="boot-splash-tag">Encryptic Movies</p>
+
+                <div class="boot-splash-progress-row">
+                    <div
+                        class="boot-splash-bar"
+                        role="progressbar"
+                        aria-valuemin="0"
+                        aria-valuemax="100"
+                        aria-valuenow="0"
+                    >
+                        <div class="boot-splash-bar-fill" id="boot-splash-bar-fill"></div>
+                    </div>
+                    <span class="boot-splash-pct" id="boot-splash-pct">0%</span>
+                </div>
+
+                <p class="boot-splash-eta" id="boot-splash-eta">About 5 seconds remaining</p>
+                <p class="boot-splash-status" id="boot-splash-status">Starting Encryptic Movies…</p>
+
+                <ul class="boot-splash-steps" id="boot-splash-steps">
+                    <li data-step="engine">Core engine</li>
+                    <li data-step="secure">Secure credentials</li>
+                    <li data-step="api">TMDB API</li>
+                    <li data-step="ui">User interface</li>
+                </ul>
+            </div>
+        </div>
+        <div id="root"></div>
+        <script type="module" src="/src/main.jsx"></script>
+    </body>
+</html>

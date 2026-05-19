@@ -1,0 +1,70 @@
+{
+  "name": "encryptic-movies-setup",
+  "version": "1.0.0",
+  "description": "Encryptic Movies — custom setup wizard",
+  "main": "main.js",
+  "author": {
+    "name": "Joe"
+  },
+  "license": "GPL-3.0",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable --publish never"
+  },
+  "devDependencies": {
+    "electron": "40.10.0",
+    "electron-builder": "26.8.1"
+  },
+  "build": {
+    "appId": "com.encryptic.movies.setup",
+    "productName": "Encryptic Movies Setup",
+    "asar": true,
+    "compression": "maximum",
+    "directories": {
+      "output": "../dist",
+      "buildResources": "../build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "wizard.js",
+      "installerEngine.js",
+      "posterFetch.js",
+      "spotlightMovies.js",
+      "updateCheck.js",
+      "updateConfig.js",
+      "index.html",
+      "installer.css",
+      "assets/**/*",
+      "package.json",
+      "!test-*.js",
+      "!cachePostersToDisk.js",
+      "!payload/**"
+    ],
+    "extraResources": [
+      {
+        "from": "payload",
+        "to": "payload",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "icon": "../public/encryptic-logo.png",
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Encryptic Movies Setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "Encryptic Movies Setup.${ext}"
+    }
+  }
+}

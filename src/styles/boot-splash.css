@@ -1,0 +1,310 @@
+/* Boot splash — visible before React hydrates */
+
+html,
+body {
+    margin: 0;
+    height: 100%;
+    background: #000;
+}
+
+#boot-splash {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+    overflow: hidden;
+    transition: opacity 0.55s ease, visibility 0.55s ease;
+}
+
+#boot-splash.boot-splash--out {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.boot-splash-mesh {
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(ellipse 80% 55% at 50% -10%, rgba(196, 163, 90, 0.14), transparent 55%),
+        radial-gradient(ellipse 45% 35% at 85% 90%, rgba(196, 163, 90, 0.06), transparent 50%),
+        radial-gradient(ellipse 40% 30% at 10% 80%, rgba(255, 255, 255, 0.03), transparent 45%);
+    animation: boot-mesh-pulse 4s ease-in-out infinite;
+}
+
+.boot-splash-grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+        linear-gradient(rgba(196, 163, 90, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(196, 163, 90, 0.04) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(ellipse 70% 60% at 50% 45%, black 20%, transparent 75%);
+    opacity: 0.5;
+}
+
+.boot-splash-scan {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(196, 163, 90, 0.15),
+        rgba(232, 213, 168, 0.5),
+        rgba(196, 163, 90, 0.15),
+        transparent
+    );
+    box-shadow: 0 0 24px rgba(196, 163, 90, 0.35);
+    animation: boot-scan 2.8s ease-in-out infinite;
+    opacity: 0.7;
+}
+
+.boot-splash-inner {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 32px;
+    animation: boot-rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.boot-splash-logo-wrap {
+    position: relative;
+    margin-bottom: 28px;
+}
+
+.boot-splash-logo-wrap::before {
+    content: "";
+    position: absolute;
+    inset: -24px;
+    border-radius: 50%;
+    border: 1px solid rgba(196, 163, 90, 0.2);
+    animation: boot-ring 2.4s ease-in-out infinite;
+}
+
+.boot-splash-logo-wrap::after {
+    content: "";
+    position: absolute;
+    inset: -40px;
+    border-radius: 50%;
+    border: 1px solid rgba(196, 163, 90, 0.08);
+    animation: boot-ring 2.4s ease-in-out infinite 0.4s;
+}
+
+.boot-splash-logo {
+    width: min(200px, 42vw);
+    height: auto;
+    display: block;
+    filter: drop-shadow(0 0 40px rgba(196, 163, 90, 0.25));
+    animation: boot-logo-glow 2.2s ease-in-out infinite;
+}
+
+.boot-splash-heading {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.65);
+    margin: 0 0 18px;
+}
+
+.boot-splash-tag {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: rgba(232, 213, 168, 0.95);
+    margin: 0 0 28px;
+}
+
+.boot-splash-progress-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: min(360px, 88vw);
+    margin-bottom: 14px;
+}
+
+.boot-splash-bar {
+    flex: 1;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.boot-splash-bar-fill {
+    height: 100%;
+    width: 0%;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #8a7340, #e8d5a8, #c4a35a);
+    box-shadow: 0 0 16px rgba(196, 163, 90, 0.5);
+    transition: width 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.boot-splash-pct {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: rgba(232, 213, 168, 0.95);
+    min-width: 3em;
+    text-align: right;
+}
+
+.boot-splash-eta {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    font-size: 16px;
+    color: rgba(255, 255, 255, 0.7);
+    letter-spacing: 0.02em;
+    margin: 0 0 10px;
+    min-height: 22px;
+}
+
+.boot-splash-status {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    font-size: 18px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.85);
+    letter-spacing: 0.02em;
+    min-height: 26px;
+    margin: 0 0 24px;
+    max-width: min(420px, 90vw);
+    line-height: 1.35;
+}
+
+.boot-splash-steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    text-align: left;
+    width: min(320px, 85vw);
+}
+
+.boot-splash-steps li {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    font-size: 15px;
+    color: rgba(255, 255, 255, 0.45);
+    padding-left: 28px;
+    position: relative;
+    transition: color 0.25s ease;
+}
+
+.boot-splash-steps li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: transparent;
+    transition:
+        border-color 0.25s ease,
+        background 0.25s ease,
+        box-shadow 0.25s ease;
+}
+
+.boot-splash-step--active {
+    color: rgba(232, 213, 168, 0.95);
+}
+
+.boot-splash-step--active::before {
+    border-color: rgba(196, 163, 90, 0.8);
+    background: rgba(196, 163, 90, 0.35);
+    box-shadow: 0 0 10px rgba(196, 163, 90, 0.45);
+}
+
+.boot-splash-step--done {
+    color: rgba(196, 163, 90, 0.55);
+}
+
+.boot-splash-step--done::before {
+    content: "✓";
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    font-size: 11px;
+    line-height: 1;
+    border: none;
+    background: rgba(196, 163, 90, 0.2);
+    color: rgba(232, 213, 168, 0.9);
+    transform: translateY(-50%);
+}
+
+@keyframes boot-mesh-pulse {
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.75;
+    }
+}
+
+@keyframes boot-scan {
+    0% {
+        top: -4%;
+        opacity: 0;
+    }
+    15% {
+        opacity: 0.7;
+    }
+    85% {
+        opacity: 0.7;
+    }
+    100% {
+        top: 104%;
+        opacity: 0;
+    }
+}
+
+@keyframes boot-rise {
+    from {
+        opacity: 0;
+        transform: translateY(24px) scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes boot-ring {
+    0%,
+    100% {
+        transform: scale(1);
+        opacity: 0.5;
+    }
+    50% {
+        transform: scale(1.06);
+        opacity: 1;
+    }
+}
+
+@keyframes boot-logo-glow {
+    0%,
+    100% {
+        filter: drop-shadow(0 0 32px rgba(196, 163, 90, 0.2));
+    }
+    50% {
+        filter: drop-shadow(0 0 48px rgba(196, 163, 90, 0.4));
+    }
+}
+

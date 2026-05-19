@@ -1,7 +1,8 @@
 /** Injected into embed webviews to switch sub/dub audio inside nested players. */
 
-export function buildDubInjectScript(dubMode) {
+export function buildDubInjectScript(dubMode, preferredLangName = "English") {
   const mode = dubMode === "dub" ? "dub" : "sub";
+  const prefLabel = String(preferredLangName || "English");
   return `(function(){
     var mode = ${JSON.stringify(mode)};
     function norm(s){ return (s || '').toLowerCase().trim(); }
@@ -21,8 +22,9 @@ export function buildDubInjectScript(dubMode) {
         }
         if (picked) return true;
       }
+      var pref = ${JSON.stringify(prefLabel.toLowerCase())};
       var labels = mode === 'dub'
-        ? ['english', 'dub', 'dubbed', 'eng', 'en audio', 'audio: en']
+        ? ['english', 'dub', 'dubbed', 'eng', 'en audio', 'audio: en', pref]
         : ['japanese', 'original', 'sub', 'subbed', 'jpn', 'ja audio', 'audio: ja', 'native'];
       var nodes = doc.querySelectorAll(
         'button,[role="button"],a,li,span,div,label,input[type="button"]'
@@ -65,9 +67,13 @@ export function buildDubInjectScript(dubMode) {
 }
 
 /** Retry injection — embed players load nested iframes slowly. */
-export async function applyDubInWebview(webview, dubMode) {
+export async function applyDubInWebview(
+  webview,
+  dubMode,
+  preferredLangName = "English",
+) {
   if (!webview?.executeJavaScript) return false;
-  const script = buildDubInjectScript(dubMode);
+  const script = buildDubInjectScript(dubMode, preferredLangName);
   for (const waitMs of [0, 600, 1500, 3000, 5000]) {
     if (waitMs) await new Promise((r) => setTimeout(r, waitMs));
     try {

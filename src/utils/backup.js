@@ -13,6 +13,7 @@ export const BACKUP_KEYS = [
   "startPage",
   "playerSource",
   "allmangaDubMode",
+  "playbackLang",
   "introSkipMode",
   "ageLimit",
   "ratingCountry",

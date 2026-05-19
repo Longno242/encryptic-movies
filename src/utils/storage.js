@@ -45,6 +45,7 @@ export const STORAGE_KEYS = {
   API_KEY: "apikey",
   PLAYER_SOURCE: "playerSource",
   ALLMANGA_DUB_MODE: "allmangaDubMode",
+  PLAYBACK_LANG: "playbackLang",
   WATCH_PROGRESS: "progress",
   WATCHED: "watched",
   HISTORY: "history",

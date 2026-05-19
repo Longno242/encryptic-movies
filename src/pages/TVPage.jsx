@@ -17,6 +17,7 @@ import {
   imgUrl,
   PLAYER_SOURCES,
   getSourceUrl,
+  getSourcesForMedia,
   sourceSupportsSubDub,
   sourceSupportsProgress,
   sourceProgressViaFrames,
@@ -31,6 +32,7 @@ import {
 } from "../utils/api";
 import { usePlayerFullscreen } from "../hooks/usePlayerFullscreen";
 import { applyDubInWebview } from "../utils/playerDub";
+import { getPlaybackLang, embedLangLabel } from "../utils/playbackLang";
 import {
   BookmarkIcon,
   BookmarkFillIcon,
@@ -753,14 +755,17 @@ export default function TVPage({
   }, []);
 
   const d = details || item;
+  const playbackLang = getPlaybackLang();
   const embedUrlOpts = useMemo(
     () => ({
       dubMode,
       originalLang: d.original_language || "en",
       isAnime,
       reloadToken: dubReloadNonce,
+      preferredLang: playbackLang,
+      preferredLangName: embedLangLabel(playbackLang),
     }),
-    [dubMode, d.original_language, isAnime, dubReloadNonce],
+    [dubMode, d.original_language, isAnime, dubReloadNonce, playbackLang],
   );
   const discordPresenceRef = useRef({ title: "", posterUrl: "" });
   discordPresenceRef.current = {
@@ -1104,7 +1109,7 @@ export default function TVPage({
         sourceSupportsSubDub(playerSource) &&
         !sourceIsAsync(playerSource)
       ) {
-        void applyDubInWebview(wv, dubMode);
+        void applyDubInWebview(wv, dubMode, embedUrlOpts.preferredLangName);
       }
     };
     wv.addEventListener("did-finish-load", done);
@@ -1927,7 +1932,7 @@ export default function TVPage({
                     style={{ top: menuPos.top, left: menuPos.left }}
                     onClick={(e) => e.stopPropagation()}
                   >
-                    {PLAYER_SOURCES.map((src) => (
+                    {getSourcesForMedia(isAnime).map((src) => (
                       <button
                         key={src.id}
                         className={

@@ -9,6 +9,11 @@ import {
 } from "../utils/storage";
 import { ACCENT_PRESETS, applyAccentColor } from "../utils/appearance";
 import { SUBTITLE_LANGUAGES } from "../utils/subtitles";
+import {
+  getPlaybackLang,
+  setPlaybackLang,
+  PLAYBACK_LANGUAGES,
+} from "../utils/playbackLang";
 import { DEFAULT_INVIDIOUS_BASE } from "../components/TrailerModal";
 import { RATING_COUNTRIES } from "../utils/ageRating";
 import { WarningIcon } from "../components/Icons";
@@ -2104,6 +2109,10 @@ const SECTION_NAV = [
       "skip",
       "aniskip",
       "anime",
+      "language",
+      "dub",
+      "sub",
+      "english",
       "outro",
       "discord",
       "rich presence",
@@ -2939,6 +2948,16 @@ export default function SettingsPage({
   const [invidiousChecking, setInvidiousChecking] = useState(false);
   const [invidiousSaved, setInvidiousSaved] = useState(false);
 
+  const [playbackLang, setPlaybackLangState] = useState(() => getPlaybackLang());
+  const [playbackLangSaved, setPlaybackLangSaved] = useState(false);
+
+  const savePlaybackLang = (code) => {
+    setPlaybackLangState(code);
+    setPlaybackLang(code);
+    setPlaybackLangSaved(true);
+    setTimeout(() => setPlaybackLangSaved(false), 2000);
+  };
+
   const checkInvidious = async (baseUrl) => {
     const clean = (baseUrl || "").trim().replace(/\/$/, "");
     if (!clean) {
@@ -3406,6 +3425,41 @@ export default function SettingsPage({
             )}
 
             {invidiousSaved && (
+              <div style={{ marginTop: 10, fontSize: 13, color: "#48c774" }}>
+                ✓ Saved
+              </div>
+            )}
+          </div>
+
+          <Divider />
+
+          {/* Player language (anime / embed) */}
+          <div style={{ marginBottom: 40 }}>
+            <div className="settings-section-title">Player language</div>
+            <div
+              style={{
+                fontSize: 13,
+                color: "var(--text3)",
+                marginBottom: 16,
+                lineHeight: 1.6,
+              }}
+            >
+              Preferred language for anime and embedded players.{" "}
+              <strong style={{ color: "var(--text)" }}>DUB</strong> uses this
+              language; <strong style={{ color: "var(--text)" }}>SUB</strong>{" "}
+              keeps the original audio with subtitles when available. Try{" "}
+              <strong style={{ color: "var(--text)" }}>VidSrc Anime</strong>,{" "}
+              Smashy, or VidPlus if AllManga fails.
+            </div>
+            <SettingsSelect
+              value={playbackLang}
+              onChange={(v) => savePlaybackLang(v)}
+              options={PLAYBACK_LANGUAGES.map((l) => ({
+                value: l.code,
+                label: l.label,
+              }))}
+            />
+            {playbackLangSaved && (
               <div style={{ marginTop: 10, fontSize: 13, color: "#48c774" }}>
                 ✓ Saved
               </div>

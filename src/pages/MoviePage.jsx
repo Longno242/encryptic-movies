@@ -23,6 +23,7 @@ import {
   NON_ANIME_DEFAULT_SOURCE,
 } from "../utils/api";
 import { usePlayerFullscreen } from "../hooks/usePlayerFullscreen";
+import { applyDubInWebview } from "../utils/playerDub";
 import {
   PlayIcon,
   BookmarkIcon,
@@ -98,6 +99,7 @@ export default function MoviePage({
   const [dubMode, setDubMode] = useState(
     () => storage.get(STORAGE_KEYS.ALLMANGA_DUB_MODE) || "sub",
   );
+  const [dubReloadNonce, setDubReloadNonce] = useState(0);
   const [anilistData, setAnilistData] = useState(null);
   const [menuPos, setMenuPos] = useState(null);
   const sourceRef = useRef(null);
@@ -169,8 +171,10 @@ export default function MoviePage({
     () => ({
       dubMode,
       originalLang: d.original_language || "en",
+      isAnime,
+      reloadToken: dubReloadNonce,
     }),
-    [dubMode, d.original_language],
+    [dubMode, d.original_language, isAnime, dubReloadNonce],
   );
   const title = d.title || d.name;
   const year = (d.release_date || "").slice(0, 4);
@@ -285,6 +289,28 @@ export default function MoviePage({
     setResolveError(null);
     setWebviewLoading(true); // instantly blank the player on every source/item switch
   }, [item.id, playerSource, dubMode]);
+
+  // Force embed reload when SUB/DUB changes (subtitle URL params don't switch audio).
+  useEffect(() => {
+    if (!dubReloadNonce || !playing || sourceIsAsync(playerSource)) return;
+    if (!sourceSupportsSubDub(playerSource)) return;
+    const wv = webviewRef.current;
+    if (!wv) return;
+    const url = getSourceUrl(
+      playerSource,
+      "movie",
+      item.id,
+      null,
+      null,
+      embedUrlOpts,
+    );
+    setWebviewLoading(true);
+    try {
+      wv.src = url;
+    } catch {
+      /* ignore */
+    }
+  }, [dubReloadNonce]);
 
   // Fetch AniList data + auto-set source for anime/non-anime
   useEffect(() => {
@@ -454,14 +480,22 @@ export default function MoviePage({
     if (!playing) return;
     const wv = webviewRef.current;
     if (!wv) return;
-    const done = () => setWebviewLoading(false);
+    const done = () => {
+      setWebviewLoading(false);
+      if (
+        sourceSupportsSubDub(playerSource) &&
+        !sourceIsAsync(playerSource)
+      ) {
+        void applyDubInWebview(wv, dubMode);
+      }
+    };
     wv.addEventListener("did-finish-load", done);
     wv.addEventListener("did-fail-load", done);
     return () => {
       wv.removeEventListener("did-finish-load", done);
       wv.removeEventListener("did-fail-load", done);
     };
-  }, [playing, playerSource, item.id]);
+  }, [playing, playerSource, item.id, dubMode]);
 
   // ── Auto-track progress + auto-watched every 5s ──────────────────────────
   useEffect(() => {
@@ -1033,7 +1067,9 @@ export default function MoviePage({
                     setResolvedPlayerUrl(null);
                     setResolvingUrl(false);
                     setResolveError(null);
-                    if (playerSource !== "allmanga") setWebviewLoading(true);
+                    if (playerSource === "allmanga") return;
+                    setDubReloadNonce((n) => n + 1);
+                    setWebviewLoading(true);
                   }}
                   title={
                     dubMode === "sub"

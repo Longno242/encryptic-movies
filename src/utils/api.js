@@ -170,26 +170,49 @@ function withQuery(url, params) {
 }
 
 /**
- * @param {{ dubMode?: 'sub'|'dub', originalLang?: string }} [opts]
+ * @param {{ dubMode?: 'sub'|'dub', originalLang?: string, reloadToken?: number|string }} [opts]
  */
 export const getSourceUrl = (sourceId, type, id, season, ep, opts = {}) => {
   const src = findSource(sourceId);
   let url = type === "movie" ? src.movieUrl(id) : src.tvUrl(id, season, ep);
   const dubMode = opts.dubMode === "dub" ? "dub" : "sub";
   const originalLang = (opts.originalLang || "en").slice(0, 2).toLowerCase();
+  const isAnime = !!opts.isAnime;
 
   if (sourceId === "vidsrc") {
-    const dsLang = dubMode === "dub" ? "en" : originalLang;
-    url = withQuery(url, { ds_lang: dsLang });
-  } else if (sourceId === "2embed") {
-    if (dubMode === "dub") url = withQuery(url, { lang: "en" });
-    else if (originalLang && originalLang !== "en") {
-      url = withQuery(url, { lang: originalLang });
+    if (isAnime && type === "movie") {
+      url = `https://vidsrc.to/embed/anime/${id}/1/1`;
+      url = withQuery(url, {
+        dub: dubMode === "dub" ? "1" : "0",
+        ds_lang: dubMode === "dub" ? "en" : originalLang,
+      });
+    } else {
+      const dsLang =
+        dubMode === "dub"
+          ? "en"
+          : originalLang !== "en"
+            ? originalLang
+            : "en";
+      url = withQuery(url, {
+        ds_lang: dsLang,
+        autoplay: "1",
+        audio: dubMode === "dub" ? "english" : "original",
+      });
     }
+  } else if (sourceId === "2embed") {
+    url = withQuery(url, {
+      lang: dubMode === "dub" ? "en" : originalLang,
+      audio: dubMode === "dub" ? "dub" : "sub",
+    });
   } else if (sourceId === "videasy") {
     url = withQuery(url, {
       lang: dubMode === "dub" ? "en" : originalLang,
+      audioLang: dubMode === "dub" ? "en" : originalLang,
     });
+  }
+
+  if (opts.reloadToken != null) {
+    url = withQuery(url, { _rd: String(opts.reloadToken) });
   }
 
   return url;

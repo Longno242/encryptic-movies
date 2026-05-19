@@ -1002,17 +1002,95 @@ body.no-anim *::after {
     border: 1px solid var(--border);
 }
 
+/* True in-app fullscreen: hide shell chrome, player covers entire window */
+html[data-player-fullscreen] .sidebar {
+    display: none !important;
+}
+
+html[data-player-fullscreen] .main {
+    margin-left: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100vh !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+}
+
+html[data-player-fullscreen] .api-status-banner,
+html[data-player-fullscreen] .update-banner-top {
+    display: none !important;
+}
+
+html[data-player-fullscreen] .page--player-fs .detail-hero,
+html[data-player-fullscreen] .page--player-fs .section:not(.section--player-active) {
+    display: none !important;
+}
+
+html[data-player-fullscreen] .page--player-fs {
+    min-height: 100vh !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+html[data-player-fullscreen] .page--player-fs .section--player-active {
+    margin: 0 !important;
+    padding: 0 !important;
+    max-width: none !important;
+}
+
+html[data-player-fullscreen] .page--player-fs .section--player-active > *:not(.player-wrap) {
+    display: none !important;
+}
+
+html[data-player-fullscreen] .page--player-fs .player-episode-bar {
+    display: none !important;
+}
+
 .player-wrap--fullscreen {
     position: fixed !important;
     inset: 0 !important;
-    z-index: 9999;
+    z-index: 100000;
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: none !important;
     border-radius: 0 !important;
     border: none !important;
+    background: #000 !important;
 }
 
-.player-wrap--fullscreen .player-overlay-group,
-.player-wrap--fullscreen .player-overlay-btn {
+.player-wrap--fullscreen::before {
     display: none !important;
+}
+
+.player-wrap--fullscreen webview {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.player-wrap--fullscreen .player-overlay-group {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.player-wrap--fullscreen:hover .player-overlay-group,
+.player-wrap--fullscreen:focus-within .player-overlay-group {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.player-fs-exit {
+    display: none;
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 10002;
+}
+
+.player-wrap--fullscreen .player-fs-exit {
+    display: inline-flex;
 }
 
 /* Hide the custom window titlebar on player fullscreen */

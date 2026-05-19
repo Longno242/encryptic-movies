@@ -191,4 +191,12 @@ contextBridge.exposeInMainWorld("electron", {
   },
   offScheduledBackupRequested: (h) =>
     ipcRenderer.removeListener("scheduled-backup-requested", h),
+
+  // Discord Rich Presence
+  setDiscordRpcEnabled: (enabled) =>
+    ipcRenderer.invoke("discord-rpc-set-enabled", enabled),
+  updateDiscordPresence: (payload) =>
+    ipcRenderer.invoke("discord-rpc-update", payload),
+  clearDiscordPresence: () => ipcRenderer.invoke("discord-rpc-clear"),
+  setDiscordBrowsing: () => ipcRenderer.invoke("discord-rpc-browsing"),
 });

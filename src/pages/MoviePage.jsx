@@ -20,8 +20,8 @@ import {
   isAnimeContent,
   ANIME_DEFAULT_SOURCE,
   NON_ANIME_DEFAULT_SOURCE,
-  NEEDS_INTERCEPT,
 } from "../utils/api";
+import { usePlayerFullscreen } from "../hooks/usePlayerFullscreen";
 import {
   PlayIcon,
   BookmarkIcon,
@@ -37,6 +37,7 @@ import {
   SourceIcon,
   ShieldBlockIcon,
   PopOutIcon,
+  FullscreenIcon,
 } from "../components/Icons";
 import DownloadModal from "../components/DownloadModal";
 import MovieCastSection from "../components/MovieCastSection";
@@ -45,6 +46,10 @@ import BlockedStatsModal from "../components/BlockedStatsModal";
 import { useBlockedStats } from "../utils/useBlockedStats";
 import MediaCard from "../components/MediaCard";
 import { storage } from "../utils/storage";
+import {
+  updateDiscordPresence,
+  clearDiscordPresence,
+} from "../utils/discordPresence";
 import {
   fetchMovieRating,
   isRestricted,
@@ -109,7 +114,8 @@ export default function MoviePage({
   const [collection, setCollection] = useState(null); // { name, parts }
   // Webview loading overlay
   const [webviewLoading, setWebviewLoading] = useState(false);
-  const [playerFullscreen, setPlayerFullscreen] = useState(false);
+  const { playerFullscreen, toggleFullscreen, exitFullscreen } =
+    usePlayerFullscreen(playing, playerSource);
   // pipOpen=true: main webview shows about:blank, pop-out window has the real player
   const [pipOpen, setPipOpen] = useState(false);
   const pipUrlRef = useRef(null); // URL to restore when pop-out closes
@@ -160,6 +166,11 @@ export default function MoviePage({
   const title = d.title || d.name;
   const year = (d.release_date || "").slice(0, 4);
   const mediaName = `${title}${year ? " (" + year + ")" : ""}`;
+  const discordPresenceRef = useRef({ title: "", posterUrl: "" });
+  discordPresenceRef.current = {
+    title: title || "Movie",
+    posterUrl: imgUrl(d.poster_path) || imgUrl(d.backdrop_path, "w500") || "",
+  };
 
   const { watchedSecs, totalSecs, displayPct, progressLabel } = useMemo(() => {
     const watchedSecs = storage.get("dlTime_" + progressKey) || 0;
@@ -431,9 +442,14 @@ export default function MoviePage({
   // On unmount: signal main process to destroy the player WebContents and flush session cache.
   useEffect(() => {
     return () => {
+      clearDiscordPresence();
       window.electron?.playerStopped?.();
     };
   }, []);
+
+  useEffect(() => {
+    if (!playing) clearDiscordPresence();
+  }, [playing]);
 
   // Attach webview load events so we know when the new source has painted
   useEffect(() => {
@@ -532,6 +548,13 @@ export default function MoviePage({
               lastKnownTimeRef.current = ct;
             }
             const p = Math.floor((ct / result.duration) * 100);
+            updateDiscordPresence({
+              title: discordPresenceRef.current.title,
+              posterUrl: discordPresenceRef.current.posterUrl,
+              currentTime: ct,
+              duration: result.duration,
+              mediaType: "movie",
+            });
             saveProgressRef.current(progressKey, Math.min(p, 100));
             // Also persist actual seconds so DownloadsPage can show resume position
             storage.set("dlTime_" + progressKey, Math.floor(ct));
@@ -563,28 +586,6 @@ export default function MoviePage({
     setPlaying(true);
     onHistory({ ...d, media_type: "movie" });
   }, [d, onHistory]);
-
-  // Intercept fullscreen requests from embedded players (vidsrc / 2embed use
-  // the native Fullscreen API which would otherwise fullscreen the entire app).
-  // Videasy and AllManga handle fullscreen internally via CSS, skip those.
-  useEffect(() => {
-    if (!playing) return;
-    if (!NEEDS_INTERCEPT.includes(playerSource)) return;
-    const enterH = window.electron?.onWebviewEnterFullscreen?.(() => {
-      setPlayerFullscreen(true);
-      document.documentElement.setAttribute("data-player-fullscreen", "1");
-    });
-    const leaveH = window.electron?.onWebviewLeaveFullscreen?.(() => {
-      setPlayerFullscreen(false);
-      document.documentElement.removeAttribute("data-player-fullscreen");
-      if (document.fullscreenElement) document.exitFullscreen?.();
-    });
-    return () => {
-      if (enterH) window.electron?.offWebviewEnterFullscreen?.(enterH);
-      if (leaveH) window.electron?.offWebviewLeaveFullscreen?.(leaveH);
-      document.documentElement.removeAttribute("data-player-fullscreen");
-    };
-  }, [playing, playerSource]);
 
   // ── PiP pop-out: navigate main webview away so only one stream is active ──
   useEffect(() => {
@@ -682,7 +683,9 @@ export default function MoviePage({
   ]);
 
   return (
-    <div className="fade-in page-enter movie-page">
+    <div
+      className={`fade-in page-enter movie-page${playerFullscreen ? " page--player-fs" : ""}`}
+    >
       <div className="detail-hero">
         <div
           className="detail-bg"
@@ -869,7 +872,7 @@ export default function MoviePage({
       </div>
 
       {playing && !restricted && !isUnreleased && (
-        <div className="section">
+        <div className="section section--player-active">
           <div
             className={`player-wrap${playerFullscreen ? " player-wrap--fullscreen" : ""}`}
             ref={playerWrapRef}
@@ -1046,8 +1049,20 @@ export default function MoviePage({
                   <span className="player-blocked-badge">{blockedSession}</span>
                 )}
               </button>
+              <button
+                type="button"
+                className="player-overlay-btn"
+                onClick={toggleFullscreen}
+                disabled={pipOpen}
+                title={
+                  playerFullscreen ? "Exit fullscreen (Esc)" : "Fullscreen"
+                }
+              >
+                <FullscreenIcon exit={playerFullscreen} />
+              </button>
               {/* Pop-out button*/}
               <button
+                type="button"
                 className="player-overlay-btn"
                 onClick={() => {
                   if (pipOpen) {
@@ -1072,6 +1087,16 @@ export default function MoviePage({
                 <PopOutIcon />
               </button>
             </div>
+            {playerFullscreen && (
+              <button
+                type="button"
+                className="player-overlay-btn player-fs-exit"
+                onClick={exitFullscreen}
+                title="Exit fullscreen (Esc)"
+              >
+                <FullscreenIcon exit />
+              </button>
+            )}
             {showSourceMenu && menuPos && (
               <div
                 className="source-dropdown source-dropdown--fixed"

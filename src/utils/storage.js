@@ -75,6 +75,7 @@ export const STORAGE_KEYS = {
   NOTIFY_DOWNLOAD_COMPLETE: "notifyDownloadComplete",
   NOTIFY_NEW_EPISODE: "notifyNewEpisode",
   INTRO_SKIP_MODE: "introSkipMode",
+  DISCORD_RPC_ENABLED: "discordRpcEnabled",
   DL_SORT_BY: "dlSortBy",
   DL_SORT_DIR: "dlSortDir",
   DL_SHOW_UNTRACKED: "dlShowUntracked",

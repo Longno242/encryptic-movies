@@ -18,6 +18,7 @@ const downloadsIpc = require("./ipc/downloads");
 const subtitlesIpc = require("./ipc/subtitles");
 const allmangaIpc = require("./ipc/allmanga");
 const playerIpc = require("./ipc/player");
+const discordIpc = require("./ipc/discord");
 const { setupSession } = require("./session/setup");
 
 app.commandLine.appendSwitch(
@@ -186,11 +187,14 @@ playerIpc.register(getMainWindow, {
   writeSecretMigration: storageIpc.writeSecretMigration,
   getDownloads: downloadsIpc.getDownloads,
 });
+discordIpc.register();
 blockStats.init(getMainWindow);
 
 ipcMain.handle("get-block-stats", () => blockStats.getBlockStats());
 
 ipcMain.on("player-stopped", () => {
+  discordIpc.discordRpc.setBrowsing().catch(() => {});
+
   for (const id of playerWebContentsIds) {
     try {
       const wc = webContents.fromId(id);
@@ -428,6 +432,10 @@ if (!hasLock) {
     logBoot("app ready");
     createMainWindow();
     void storageIpc.applySecretMigrationIfNeeded();
+    discordIpc.discordRpc.setBrowsing().catch(() => {});
+  });
+  app.on("before-quit", () => {
+    discordIpc.discordRpc.destroy();
   });
   app.on("window-all-closed", () => app.quit());
   app.on("activate", () => {

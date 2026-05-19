@@ -2105,6 +2105,9 @@ const SECTION_NAV = [
       "aniskip",
       "anime",
       "outro",
+      "discord",
+      "rich presence",
+      "status",
     ],
   },
   {
@@ -2856,6 +2859,10 @@ export default function SettingsPage({
   const [introSkipMode, setIntroSkipMode] = useState(
     () => storage.get(STORAGE_KEYS.INTRO_SKIP_MODE) || "off",
   );
+  const [discordRpcEnabled, setDiscordRpcEnabled] = useState(() => {
+    const v = storage.get(STORAGE_KEYS.DISCORD_RPC_ENABLED);
+    return v === null || v === undefined || v === true || v === 1 || v === "1";
+  });
   const [saved, setSaved] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetHovered, setResetHovered] = useState(false);
@@ -3456,6 +3463,58 @@ export default function SettingsPage({
                 ✓ Saved
               </div>
             )}
+          </div>
+
+          <Divider />
+
+          {/* Discord Rich Presence */}
+          <div style={{ marginBottom: 40 }}>
+            <div className="settings-section-title">Discord Rich Presence</div>
+            <div
+              style={{
+                fontSize: 13,
+                color: "var(--text3)",
+                marginBottom: 16,
+                lineHeight: 1.6,
+              }}
+            >
+              Shows what you are watching, the movie or show poster, and time
+              remaining in Discord. Requires Discord desktop to be running.
+            </div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <Toggle
+                value={discordRpcEnabled}
+                onChange={(val) => {
+                  setDiscordRpcEnabled(val);
+                  storage.set(STORAGE_KEYS.DISCORD_RPC_ENABLED, val ? 1 : 0);
+                  window.electron?.setDiscordRpcEnabled?.(val);
+                  if (!val) window.electron?.clearDiscordPresence?.();
+                  else window.electron?.setDiscordBrowsing?.();
+                }}
+                title={
+                  discordRpcEnabled
+                    ? "Disable Discord status"
+                    : "Enable Discord status"
+                }
+              />
+              <div>
+                <div
+                  style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}
+                >
+                  Show activity in Discord
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
+                  Example: Watching Inception · 42 min left
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Intro Skip */}

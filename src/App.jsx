@@ -32,6 +32,10 @@ const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const DownloadsPage = lazy(() => import("./pages/DownloadsPage"));
 const PersonPage = lazy(() => import("./pages/PersonPage"));
 import { checkForUpdates } from "./utils/updates";
+import {
+  isDiscordRpcEnabled,
+  syncDiscordRpcEnabled,
+} from "./utils/discordPresence";
 import { bootStep, bootFinish } from "./utils/bootSplash";
 
 export default function App() {
@@ -102,6 +106,11 @@ export default function App() {
       }
       localStorage.setItem("MOV_lastVersion", version);
     });
+  }, []);
+
+  // ── Discord Rich Presence ───────────────────────────────────────────────────
+  useEffect(() => {
+    syncDiscordRpcEnabled(isDiscordRpcEnabled());
   }, []);
 
   // ── Startup update check ─────────────────────────────────────────────────
@@ -1146,6 +1155,7 @@ export default function App() {
         )}
         {updateBanner && (
           <div
+            className="update-banner-top"
             style={{
               position: "fixed",
               top: hasCustomTitlebar ? 32 : 0,

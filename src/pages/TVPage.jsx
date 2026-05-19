@@ -27,8 +27,8 @@ import {
   isAnimeContent,
   ANIME_DEFAULT_SOURCE,
   NON_ANIME_DEFAULT_SOURCE,
-  NEEDS_INTERCEPT,
 } from "../utils/api";
+import { usePlayerFullscreen } from "../hooks/usePlayerFullscreen";
 import {
   BookmarkIcon,
   BookmarkFillIcon,
@@ -44,12 +44,17 @@ import {
   SourceIcon,
   ShieldBlockIcon,
   PopOutIcon,
+  FullscreenIcon,
 } from "../components/Icons";
 import DownloadModal from "../components/DownloadModal";
 import TrailerModal from "../components/TrailerModal";
 import BlockedStatsModal from "../components/BlockedStatsModal";
 import { useBlockedStats } from "../utils/useBlockedStats";
 import { storage, STORAGE_KEYS } from "../utils/storage";
+import {
+  updateDiscordPresence,
+  clearDiscordPresence,
+} from "../utils/discordPresence";
 import { fetchAniSkipTimings } from "../utils/aniSkip";
 import {
   fetchTVRating,
@@ -411,7 +416,8 @@ export default function TVPage({
   const [episodeGroupMap, setEpisodeGroupMap] = useState(null); // Map built from TMDB episode group
   // Webview loading overlay
   const [webviewLoading, setWebviewLoading] = useState(false);
-  const [playerFullscreen, setPlayerFullscreen] = useState(false);
+  const { playerFullscreen, toggleFullscreen, exitFullscreen } =
+    usePlayerFullscreen(playing, playerSource);
   const [pipOpen, setPipOpen] = useState(false);
   const pipUrlRef = useRef(null);
   const pipWebContentsIdRef = useRef(null); // cached WebContents ID of the pop-out window
@@ -744,6 +750,11 @@ export default function TVPage({
   }, []);
 
   const d = details || item;
+  const discordPresenceRef = useRef({ title: "", posterUrl: "" });
+  discordPresenceRef.current = {
+    title: d.name || d.title || "TV Show",
+    posterUrl: imgUrl(d.poster_path) || imgUrl(d.backdrop_path, "w500") || "",
+  };
   const title = d.name || d.title;
   const year = (d.first_air_date || "").slice(0, 4);
 
@@ -1039,9 +1050,14 @@ export default function TVPage({
   // On unmount: signal main process to destroy the player WebContents and flush session cahce
   useEffect(() => {
     return () => {
+      clearDiscordPresence();
       window.electron?.playerStopped?.();
     };
   }, []);
+
+  useEffect(() => {
+    if (!playing) clearDiscordPresence();
+  }, [playing]);
 
   // Attach webview load events so we know when the new source has painted.
   // Also poll for video duration so AniSkip markers appear without waiting for the 5s progress tick.
@@ -1265,6 +1281,17 @@ export default function TVPage({
               lastKnownTimeRef.current = ct;
             }
             const p = Math.floor((ct / result.duration) * 100);
+            const epLabel = selectedEp
+              ? `Season ${selectedSeason} · Episode ${selectedEp.episode_number}`
+              : "";
+            updateDiscordPresence({
+              title: discordPresenceRef.current.title,
+              subtitle: epLabel,
+              posterUrl: discordPresenceRef.current.posterUrl,
+              currentTime: ct,
+              duration: result.duration,
+              mediaType: "tv",
+            });
             saveProgressRef.current(currentProgressKey, Math.min(p, 100));
             // Also persist actual seconds so DownloadsPage can show resume position
             storage.set("dlTime_" + currentProgressKey, Math.floor(ct));
@@ -1297,6 +1324,10 @@ export default function TVPage({
     currentProgressKey,
     watchedThreshold,
     progressViaFrames,
+    selectedEp,
+    selectedSeason,
+    item.name,
+    item.title,
   ]);
 
   // Skip backward/forward by N seconds via webview JS injection
@@ -1417,30 +1448,6 @@ export default function TVPage({
     storage.set("downloaderFolder", folder);
   }, []);
 
-  // Intercept fullscreen requests from embedded players (vidsrc / 2embed use
-  // the native Fullscreen API which would otherwise fullscreen the entire app).
-  // Videasy and AllManga handle fullscreen internally via CSS, skip those.
-  useEffect(() => {
-    if (!playing) return;
-    if (!NEEDS_INTERCEPT.includes(playerSource)) return;
-    const enterH = window.electron?.onWebviewEnterFullscreen?.(() => {
-      // requestFullscreen() is rejected when Electron is already in fullscreen -> use css overlay
-      setPlayerFullscreen(true);
-      document.documentElement.setAttribute("data-player-fullscreen", "1");
-    });
-    const leaveH = window.electron?.onWebviewLeaveFullscreen?.(() => {
-      setPlayerFullscreen(false);
-      document.documentElement.removeAttribute("data-player-fullscreen");
-      if (document.fullscreenElement) document.exitFullscreen?.();
-    });
-    return () => {
-      if (enterH) window.electron?.offWebviewEnterFullscreen?.(enterH);
-      if (leaveH) window.electron?.offWebviewLeaveFullscreen?.(leaveH);
-      // Clean up attribute if component unmounts while fullscreen
-      document.documentElement.removeAttribute("data-player-fullscreen");
-    };
-  }, [playing, playerSource]);
-
   // ── PiP pop-out: navigate main webview away so only one stream is active ──
   useEffect(() => {
     if (!playing) return;
@@ -1474,7 +1481,7 @@ export default function TVPage({
     : false;
 
   return (
-    <div className="fade-in">
+    <div className={`fade-in${playerFullscreen ? " page--player-fs" : ""}`}>
       {loading && (
         <div className="loader">
           <div className="spinner" />
@@ -1588,8 +1595,9 @@ export default function TVPage({
           </div>
 
           {playing && selectedEp && (
-            <div className="section">
+            <div className="section section--player-active">
               <div
+                className="player-episode-bar"
                 style={{
                   marginBottom: 12,
                   display: "flex",
@@ -1808,8 +1816,20 @@ export default function TVPage({
                       </span>
                     )}
                   </button>
+                  <button
+                    type="button"
+                    className="player-overlay-btn"
+                    onClick={toggleFullscreen}
+                    disabled={pipOpen}
+                    title={
+                      playerFullscreen ? "Exit fullscreen (Esc)" : "Fullscreen"
+                    }
+                  >
+                    <FullscreenIcon exit={playerFullscreen} />
+                  </button>
                   {/* Pop-out button */}
                   <button
+                    type="button"
                     className="player-overlay-btn"
                     onClick={() => {
                       if (pipOpen) {
@@ -1842,6 +1862,16 @@ export default function TVPage({
                     <PopOutIcon />
                   </button>
                 </div>
+                {playerFullscreen && (
+                  <button
+                    type="button"
+                    className="player-overlay-btn player-fs-exit"
+                    onClick={exitFullscreen}
+                    title="Exit fullscreen (Esc)"
+                  >
+                    <FullscreenIcon exit />
+                  </button>
+                )}
                 {showSourceMenu && menuPos && (
                   <div
                     className="source-dropdown source-dropdown--fixed"

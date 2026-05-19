@@ -30,6 +30,7 @@ import {
   NON_ANIME_DEFAULT_SOURCE,
 } from "../utils/api";
 import { usePlayerFullscreen } from "../hooks/usePlayerFullscreen";
+import { applyDubInWebview } from "../utils/playerDub";
 import {
   BookmarkIcon,
   BookmarkFillIcon,
@@ -406,6 +407,7 @@ export default function TVPage({
   const [dubMode, setDubMode] = useState(
     () => storage.get(STORAGE_KEYS.ALLMANGA_DUB_MODE) || "sub",
   );
+  const [dubReloadNonce, setDubReloadNonce] = useState(0);
   // async URL resolution
   const [resolvedPlayerUrl, setResolvedPlayerUrl] = useState(null);
   const [resolvingUrl, setResolvingUrl] = useState(false);
@@ -755,8 +757,10 @@ export default function TVPage({
     () => ({
       dubMode,
       originalLang: d.original_language || "en",
+      isAnime,
+      reloadToken: dubReloadNonce,
     }),
-    [dubMode, d.original_language],
+    [dubMode, d.original_language, isAnime, dubReloadNonce],
   );
   const discordPresenceRef = useRef({ title: "", posterUrl: "" });
   discordPresenceRef.current = {
@@ -863,6 +867,27 @@ export default function TVPage({
     const rawEpisode = selectedEp._tmdbAbsolute ?? selectedEp.episode_number;
     return applyEpisodeMapping(item.id, rawSeason, rawEpisode, episodeGroupMap);
   }, [selectedEp, selectedSeason, item.id, episodeGroupMap]);
+
+  useEffect(() => {
+    if (!dubReloadNonce || !playing || sourceIsAsync(playerSource)) return;
+    if (!sourceSupportsSubDub(playerSource)) return;
+    const wv = webviewRef.current;
+    if (!wv) return;
+    const url = getSourceUrl(
+      playerSource,
+      "tv",
+      item.id,
+      playerEp.season,
+      playerEp.episode,
+      embedUrlOpts,
+    );
+    setWebviewLoading(true);
+    try {
+      wv.src = url;
+    } catch {
+      /* ignore */
+    }
+  }, [dubReloadNonce]);
 
   // ── Memoized current season episodes ──────────────────────────────────────
   // While episode group or AniList data is still loading, return [] to prevent
@@ -1073,7 +1098,15 @@ export default function TVPage({
     if (!playing) return;
     const wv = webviewRef.current;
     if (!wv) return;
-    const done = () => setWebviewLoading(false);
+    const done = () => {
+      setWebviewLoading(false);
+      if (
+        sourceSupportsSubDub(playerSource) &&
+        !sourceIsAsync(playerSource)
+      ) {
+        void applyDubInWebview(wv, dubMode);
+      }
+    };
     wv.addEventListener("did-finish-load", done);
     wv.addEventListener("did-fail-load", done);
 
@@ -1102,7 +1135,7 @@ export default function TVPage({
       wv.removeEventListener("did-fail-load", done);
       clearInterval(pollDuration);
     };
-  }, [playing, playerSource, item.id, selectedEp?.episode_number]);
+  }, [playing, playerSource, item.id, selectedEp?.episode_number, dubMode]);
 
   // ── AniSkip: fetch timings when episode changes ───────────────────────────
   useEffect(() => {
@@ -1802,7 +1835,9 @@ export default function TVPage({
                         setResolvedPlayerUrl(null);
                         setResolvingUrl(false);
                         setResolveError(null);
-                        if (playerSource !== "allmanga") setWebviewLoading(true);
+                        if (playerSource === "allmanga") return;
+                        setDubReloadNonce((n) => n + 1);
+                        setWebviewLoading(true);
                       }}
                       title={
                         dubMode === "sub"

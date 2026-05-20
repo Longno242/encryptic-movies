@@ -1028,14 +1028,21 @@ html[data-player-fullscreen] .page--player-fs .section:not(.section--player-acti
 
 html[data-player-fullscreen] .page--player-fs {
     min-height: 100vh !important;
+    height: 100vh !important;
     padding: 0 !important;
     margin: 0 !important;
+    /* transform on .fade-in / .page-enter breaks position:fixed on the player */
+    transform: none !important;
+    animation: none !important;
+    opacity: 1 !important;
 }
 
 html[data-player-fullscreen] .page--player-fs .section--player-active {
     margin: 0 !important;
     padding: 0 !important;
     max-width: none !important;
+    min-height: 100vh !important;
+    height: 100vh !important;
 }
 
 html[data-player-fullscreen] .page--player-fs .section--player-active > *:not(.player-wrap) {
@@ -1046,16 +1053,36 @@ html[data-player-fullscreen] .page--player-fs .player-episode-bar {
     display: none !important;
 }
 
+html[data-player-fullscreen][data-win-titlebar] body {
+    padding: 0 !important;
+}
+
+html[data-player-fullscreen][data-win-titlebar] .main {
+    margin-top: 0 !important;
+    margin-right: 0 !important;
+    margin-bottom: 0 !important;
+}
+
+html[data-player-fullscreen] .page--player-fs .section--player-active {
+    position: relative !important;
+}
+
 .player-wrap--fullscreen {
-    position: fixed !important;
+    position: absolute !important;
     inset: 0 !important;
     z-index: 100000;
-    width: 100vw !important;
-    height: 100vh !important;
+    width: 100% !important;
+    height: 100% !important;
     max-width: none !important;
+    min-height: 0 !important;
+    aspect-ratio: unset !important;
     border-radius: 0 !important;
     border: none !important;
     background: #000 !important;
+    transform: none !important;
+    animation: none !important;
+    contain: none !important;
+    overflow: hidden !important;
 }
 
 .player-wrap--fullscreen::before {
@@ -1067,12 +1094,19 @@ html[data-player-fullscreen] .page--player-fs .player-episode-bar {
     inset: 0 !important;
     width: 100% !important;
     height: 100% !important;
+    z-index: 0 !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    filter: none !important;
+    transition: none !important;
+    transform: none !important;
 }
 
-.player-wrap--fullscreen .player-overlay-group {
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.2s ease;
+.player-wrap--fullscreen .player-overlay-group,
+.player-wrap--fullscreen > .player-overlay-btn {
+    opacity: 1;
+    pointer-events: auto;
+    z-index: 10001;
 }
 
 .player-wrap--fullscreen:hover .player-overlay-group,
@@ -1104,7 +1138,8 @@ html[data-player-fullscreen] .page--player-fs .player-episode-bar {
     padding-top: 56.25%;
 }
 
-.player-wrap iframe {
+.player-wrap iframe,
+.player-wrap webview {
     position: absolute;
     inset: 0;
     width: 100%;

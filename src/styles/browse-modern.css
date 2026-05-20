@@ -145,10 +145,10 @@
 }
 
 .browse-row__slot {
-  flex: 0 0 152px;
+  flex: 0 0 176px;
   scroll-snap-align: start;
-  animation: slotIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: calc(var(--slot-i, 0) * 45ms);
+  animation: slotIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--slot-i, 0) * 48ms);
 }
 
 @keyframes slotIn {
@@ -162,73 +162,7 @@
   }
 }
 
-/* ── Modern media card ───────────────────────────────────────────────────── */
-.card--modern {
-  border-radius: 12px;
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  transition:
-    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 0.35s ease,
-    border-color 0.25s ease;
-  will-change: transform;
-}
-
-.card--modern:hover {
-  transform: translateY(-8px) scale(1.04);
-  border-color: rgba(196, 163, 90, 0.45);
-  box-shadow:
-    0 20px 40px rgba(0, 0, 0, 0.55),
-    0 0 32px rgba(196, 163, 90, 0.12);
-  z-index: 2;
-}
-
-.card--modern.card--pressing {
-  transform: scale(0.96);
-  transition-duration: 0.12s;
-}
-
-.card--modern.card--launching {
-  animation: cardLaunch 0.38s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-}
-
-@keyframes cardLaunch {
-  0% {
-    transform: scale(1);
-    box-shadow: 0 0 0 rgba(196, 163, 90, 0);
-  }
-  35% {
-    transform: scale(0.94);
-    box-shadow: 0 0 28px rgba(196, 163, 90, 0.45);
-  }
-  100% {
-    transform: scale(1.02);
-    opacity: 0.7;
-  }
-}
-
-.card--modern .card-poster {
-  aspect-ratio: 2/3;
-  border-radius: 12px 12px 0 0;
-}
-
-.card--modern .card-overlay {
-  background: linear-gradient(
-    180deg,
-    transparent 40%,
-    rgba(0, 0, 0, 0.85) 100%
-  );
-}
-
-.card--modern .card-play {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: rgba(196, 163, 90, 0.9);
-  color: #0a0a0a;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-}
+/* Card styles — media-cards.css (.card--cinema) */
 
 /* ── Cast ────────────────────────────────────────────────────────────────── */
 .movie-cast {

@@ -741,8 +741,10 @@ export default function DownloadModal({
                   : "Start playback to capture the stream"}
               </p>
               <p className="download-waiting-hint">
-                Let the video play for 10–20 seconds. The download button unlocks
-                when a stream link is detected.
+                Let the video play for 15–30 seconds without pausing. The
+                download button unlocks when a stream link is detected. If a
+                download fails later, play the movie again first so the link
+                stays fresh.
               </p>
               {onRequestPlay && !playing && (
                 <button

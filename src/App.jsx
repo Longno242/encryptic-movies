@@ -31,12 +31,14 @@ const LibraryPage = lazy(() => import("./pages/LibraryPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const DownloadsPage = lazy(() => import("./pages/DownloadsPage"));
 const PersonPage = lazy(() => import("./pages/PersonPage"));
+const IssuesPage = lazy(() => import("./pages/IssuesPage"));
 import { checkForUpdates } from "./utils/updates";
 import {
   isDiscordRpcEnabled,
   syncDiscordRpcEnabled,
 } from "./utils/discordPresence";
 import { bootStep, bootFinish } from "./utils/bootSplash";
+import { resolveAnilistToTmdb } from "./utils/anilistHome";
 
 export default function App() {
   // apiKey loaded async from secure storage (OS keychain)
@@ -111,6 +113,12 @@ export default function App() {
   // ── Discord Rich Presence ───────────────────────────────────────────────────
   useEffect(() => {
     syncDiscordRpcEnabled(isDiscordRpcEnabled());
+  }, []);
+
+  useEffect(() => {
+    const stored = storage.get(STORAGE_KEYS.ENCRYPTIC_SHIELD);
+    const enabled = stored !== false && stored !== 0;
+    window.electron?.setEncrypticShield?.(enabled);
   }, []);
 
   // ── Startup update check ─────────────────────────────────────────────────
@@ -707,6 +715,19 @@ export default function App() {
         handleSelectPerson(item);
         return;
       }
+      if (
+        (item.media_type === "anilist" || item._anilistOnly) &&
+        apiKey
+      ) {
+        resolveAnilistToTmdb(item, apiKey).then((resolved) => {
+          if (resolved) {
+            navigate("tv", resolved);
+          } else {
+            showToast("Could not match this anime on TMDB — try search");
+          }
+        });
+        return;
+      }
       const mediaType =
         item.media_type || (item.first_air_date != null ? "tv" : "movie");
       const payload = { ...item, media_type: mediaType };
@@ -726,7 +747,7 @@ export default function App() {
       }
       navigate(mediaType === "tv" ? "tv" : "movie", payload);
     },
-    [navigate, handleSelectPerson],
+    [navigate, handleSelectPerson, apiKey, showToast],
   );
 
   const saveApiKey = useCallback((key) => {
@@ -947,7 +968,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       {hasCustomTitlebar && <WindowTitlebar />}
-      <div>
+      <div className="app-shell" data-page={page}>
         <Sidebar
           page={page}
           onNavigate={navigate}
@@ -962,7 +983,7 @@ export default function App() {
           onShowDocs={() => setShowDocs(true)}
         />
 
-        <div className="main">
+        <div className={`main page-stage page-stage--${page}`}>
           {/* ── API key status banner ── */}
           {/* Suspense boundary: lazy page chunks are fetched on first visit */}
           {apiKeyStatus === "invalid_token" && (
@@ -1021,6 +1042,7 @@ export default function App() {
                 onMarkUnwatched={markUnwatched}
                 history={history}
                 apiKey={apiKey}
+                onSave={toggleSave}
               />
             )}
             {page === "movie" && selected && (
@@ -1091,6 +1113,8 @@ export default function App() {
                 }
                 downloadEpisode={downloadIntent?.episode}
                 onDownloadIntentHandled={clearDownloadIntent}
+                onSelect={handleSelectResult}
+                onSelectPerson={handleSelectPerson}
               />
             )}
             {page === "history" && (
@@ -1114,6 +1138,7 @@ export default function App() {
                 initialSection={selected?.section}
               />
             )}
+            {page === "issues" && <IssuesPage />}
             {page === "downloads" && (
               <DownloadsPage
                 downloads={downloads}

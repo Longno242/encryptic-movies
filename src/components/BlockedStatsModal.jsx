@@ -21,7 +21,7 @@ export default function BlockedStatsModal({
         <header className="blocked-modal-header">
           <h2 className="blocked-modal-title">
             <ShieldBlockIcon size={15} />
-            Ads &amp; trackers blocked
+            Encryptic Shield
           </h2>
           <button type="button" className="blocked-modal-close" onClick={onClose} title="Close">
             <CloseIcon />
@@ -30,8 +30,8 @@ export default function BlockedStatsModal({
 
         <p className="blocked-modal-subtitle">
           {sessionTotal > 0
-            ? `${sessionTotal} request${sessionTotal === 1 ? "" : "s"} blocked this session`
-            : "Play something to see blocked ads and trackers."}
+            ? `${sessionTotal} ad / scam block${sessionTotal === 1 ? "" : "s"} this session`
+            : "Play something to see Encryptic Shield activity."}
         </p>
 
         <ul className="blocked-modal-list">

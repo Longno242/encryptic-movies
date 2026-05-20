@@ -9,6 +9,8 @@ import { imgUrl, tmdbFetch } from "../utils/api";
 import { useRatings, getRatingForItem } from "../utils/useRatings";
 import { isRestricted } from "../utils/ageRating";
 import { loadHomeLayout, loadHomeViewMode } from "../utils/homeLayout";
+import { fetchAnilistTrendingAnime } from "../utils/anilistHome";
+import AnimeIssuesBanner from "../components/AnimeIssuesBanner";
 import {
   fetchHomeCatalog,
   fetchMoviesByYear,
@@ -48,6 +50,7 @@ export default function HomePage({
   onMarkUnwatched,
   history,
   apiKey,
+  onSave,
 }) {
   const hero = trending[0];
 
@@ -61,6 +64,7 @@ export default function HomePage({
   const [activeCategory, setActiveCategory] = useState(null);
   const [showAllRows, setShowAllRows] = useState(true);
   const [launchingKey, setLaunchingKey] = useState(null);
+  const [animeTrending, setAnimeTrending] = useState([]);
 
   const [layout] = useState(() => loadHomeLayout());
   const { order: rowOrder, visible: rowVisible } = layout;
@@ -109,6 +113,17 @@ export default function HomePage({
     };
   }, [apiKey, offline, browseYear]);
 
+  useEffect(() => {
+    if (offline) return;
+    let cancelled = false;
+    fetchAnilistTrendingAnime().then((items) => {
+      if (!cancelled) setAnimeTrending(items);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [offline]);
+
   const ratingsItems = useMemo(
     () =>
       itemsForHomeRatings({
@@ -121,6 +136,7 @@ export default function HomePage({
         byYearItems,
         activeCategory,
         showAllRows,
+        animeTrending,
       }),
     [
       inProgress,
@@ -132,6 +148,7 @@ export default function HomePage({
       byYearItems,
       activeCategory,
       showAllRows,
+      animeTrending,
     ],
   );
 
@@ -253,6 +270,9 @@ export default function HomePage({
                 onMarkUnwatched={onMarkUnwatched}
                 ageRating={rd.cert}
                 restricted={rd.restricted}
+                modern
+                staggerIndex={items.indexOf(item)}
+                onQuickSave={onSave}
               />
             );
           })}
@@ -302,13 +322,17 @@ export default function HomePage({
 
   const getRowMetaForDedupe = useCallback(
     (id) => {
-      if (id === "similar") {
+      if (id === "similar" || id === "becauseYouWatched") {
         if (!similarSource || similarItems.length === 0) return null;
         return {
-          title: "Similar to",
+          title: id === "becauseYouWatched" ? "Because you watched" : "Similar to",
           titleHighlight: similarSource.title || similarSource.name,
           items: similarItems,
         };
+      }
+      if (id === "animeTrending") {
+        if (!animeTrending.length) return null;
+        return { title: "Trending Anime", items: animeTrending };
       }
       return getRowMeta(id);
     },
@@ -321,6 +345,7 @@ export default function HomePage({
       trendingMovieItems,
       trendingTVItems,
       topRatedItems,
+      animeTrending,
     ],
   );
 
@@ -348,6 +373,7 @@ export default function HomePage({
           onMarkUnwatched={onMarkUnwatched}
           ratingsMap={enrichedRatingsMap}
           launchingKey={launchingKey}
+          onQuickSave={onSave}
         />
       );
     }
@@ -371,6 +397,7 @@ export default function HomePage({
 
   return (
     <div className="fade-in home-page home-page--modern">
+      {!offline && <AnimeIssuesBanner variant="home" />}
       {offline && (
         <div className="home-offline">
           <div className="home-offline-icon">📡</div>
@@ -495,6 +522,10 @@ export default function HomePage({
                   onMarkUnwatched={onMarkUnwatched}
                   ageRating={r.cert}
                   restricted={restr}
+                  modern
+                  showQuickActions={false}
+                  staggerIndex={inProgress.indexOf(item)}
+                  onQuickSave={onSave}
                 />
               );
             })}

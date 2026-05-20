@@ -1,60 +1,20 @@
 /**
- * Player / trailer session hooks: ad blocking, header stripping,
- * HLS (.m3u8) and subtitle (.vtt) discovery for the renderer.
+ * Player / trailer session hooks: Encryptic Shield ad blocking, HLS/subtitle capture.
  */
 
-const BLOCKED_HOSTS = [
-  "*://www.google-analytics.com/*",
-  "*://analytics.google.com/*",
-  "*://googletagmanager.com/*",
-  "*://www.googletagmanager.com/*",
-  "*://googletagservices.com/*",
-  "*://doubleclick.net/*",
-  "*://*.doubleclick.net/*",
-  "*://adservice.google.com/*",
-  "*://adservice.google.de/*",
-  "*://pagead2.googlesyndication.com/*",
-  "*://stats.g.doubleclick.net/*",
-  "*://yt3.ggpht.com/ytc/*",
-  "*://fonts.googleapis.com/*",
-  "*://fonts.gstatic.com/*",
-  "*://googleapis.com/*",
-  "*://gstatic.com/*",
-  "*://cdn.adx1.com/*",
-  "*://intelligenceadx.com/*",
-  "*://adsco.re/*",
-  "*://mc.yandex.com/*",
-  "*://mc.yandex.ru/*",
-  "*://bvtpk.com/*",
-  "*://my.rtmark.net/*",
-  "*://b7510.com/*",
-  "*://gt.unbrownunflat.com/*",
-  "*://im.malocacomals.com/*",
-  "*://users.videasy.net/*",
-  "*://nf.sixmossin.com/*",
-  "*://realizationnewestfangs.com/*",
-  "*://acscdn.com/*",
-  "*://lt.taloseempest.com/*",
-  "*://pl26708123.profitableratecpm.com/*",
-  "*://preferencenail.com/*",
-  "*://protrafficinspector.com/*",
-  "*://s10.histats.com/*",
-  "*://weirdopt.com/*",
-  "*://static.cloudflareinsights.com/*",
-  "*://kettledroopingcontinuation.com/*",
-  "*://wayfarerorthodox.com/*",
-  "*://woxaglasuy.net/*",
-  "*://adeptspiritual.com/*",
-  "*://www.calculating-laugh.com/*",
-  "*://amavhxdlofklxjg.xyz/*",
-  "*://7jtjubf8p5kq7x3z2.u3qleufcm6vure326ktfpbj.cfd/*",
-  "*://5mq.get64t9vqg8pnbex1y463o.rest/*",
-  "*://usrpubtrk.com/*",
-  "*://adexchangeclear.com/*",
-  "*://rzjzjnavztycv.online/*",
-  "*://tmstr4.cloudnestra.com/*",
-  "*://tmstr4.neonhorizonworkshops.com/*",
-];
+const path = require("path");
+const {
+  BLOCKED_HOST_PATTERNS,
+  classifyRequestUrl,
+  isMediaUrl,
+} = require("./adblockLists");
+const { isShieldEnabled } = require("../shield/enabled");
+
+const PLAYER_SHIELD_PRELOAD = path.join(
+  __dirname,
+  "..",
+  "playerShieldPreload.js",
+);
 
 const MEDIA_URL_PATTERNS = [
   "*://*/*.m3u8*",
@@ -65,18 +25,6 @@ const MEDIA_URL_PATTERNS = [
 
 const CHROME_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
-
-function hostMatchesBlockedPattern(hostname, pattern) {
-  const hostPat = pattern.replace(/^\*:\/\//, "").split("/")[0];
-  if (hostPat.startsWith("*.")) {
-    return hostname.endsWith(hostPat.slice(1));
-  }
-  return hostname === hostPat || hostname === hostPat.replace(/^\*\./, "");
-}
-
-function isBlockedMediaHost(hostname) {
-  return BLOCKED_HOSTS.some((pat) => hostMatchesBlockedPattern(hostname, pat));
-}
 
 function stripFramingHeaders(details, callback) {
   const headers = { ...details.responseHeaders };
@@ -107,74 +55,136 @@ function installYoutubeConsentCookies(playerSession, trailerSession) {
   }
 }
 
+function handlePlayerRequest(details, hooks, callback) {
+  const { url, resourceType } = details;
+  const { getMainWindow, recordBlockedRequest, extractSubtitleLang } = hooks;
+  const rt = resourceType || "";
+
+  if (!isShieldEnabled()) {
+    callback({});
+    return;
+  }
+
+  if (classifyRequestUrl(url, rt) === "block") {
+    recordBlockedRequest(url);
+    callback({ cancel: true });
+    return;
+  }
+
+  if (isMediaUrl(url)) {
+    if (classifyRequestUrl(url, rt) === "block") {
+      recordBlockedRequest(url);
+      callback({ cancel: true });
+      return;
+    }
+
+    const win = getMainWindow();
+    if (win && !win.isDestroyed()) {
+      if (url.includes(".m3u8")) {
+        const referer =
+          details.referrer ||
+          details.referer ||
+          (() => {
+            try {
+              return details.webContents?.getURL?.() || "";
+            } catch {
+              return "";
+            }
+          })();
+        win.webContents.send("m3u8-found", { url, referer });
+      } else if (url.includes(".vtt")) {
+        win.webContents.send("subtitle-found", {
+          url,
+          lang: extractSubtitleLang(url),
+        });
+      }
+    }
+    callback({});
+    return;
+  }
+
+  callback({});
+}
+
 /**
  * @param {import('electron').Session} playerSession
  * @param {import('electron').Session} trailerSession
  * @param {{ getMainWindow: () => import('electron').BrowserWindow | null, recordBlockedRequest: (url: string) => void, extractSubtitleLang: (url: string) => string }} hooks
  */
-function setupSession(playerSession, trailerSession, hooks) {
-  const { getMainWindow, recordBlockedRequest, extractSubtitleLang } = hooks;
+function registerShieldPreload(sess) {
+  if (typeof sess.registerPreloadScript === "function") {
+    try {
+      sess.registerPreloadScript({
+        id: "encryptic-shield",
+        type: "frame",
+        filePath: PLAYER_SHIELD_PRELOAD,
+      });
+    } catch {
+      /* already registered */
+    }
+  }
+}
 
+/**
+ * Player partition loads many third-party stream CDNs; some networks or routers
+ * present mismatched certs. Match browser playback by allowing verify override
+ * on this session only (main app session stays strict).
+ */
+function installPlayerTlsPolicy(playerSession) {
+  playerSession.setCertificateVerifyProc((request, callback) => {
+    if (request.verificationResult === "net::OK") {
+      callback(0);
+      return;
+    }
+    const host = (request.hostname || "").toLowerCase();
+    const url = request.url || "";
+    const streamLike =
+      /\.(m3u8|ts|mp4|webm|m4s)(\?|$)/i.test(url) ||
+      url.includes("m3u8") ||
+      /speedsterwave|midwesteagle|ezvidapi|vidfast|cloudfront|akamai|googlevideo|workers\.dev/i.test(
+        host,
+      );
+    callback(streamLike ? 0 : -3);
+  });
+}
+
+function setupSession(playerSession, trailerSession, hooks) {
   playerSession.setUserAgent(CHROME_UA);
   trailerSession.setUserAgent(CHROME_UA);
+
+  installPlayerTlsPolicy(playerSession);
+  registerShieldPreload(playerSession);
 
   const headerFilter = { urls: ["*://*/*"] };
   playerSession.webRequest.onHeadersReceived(headerFilter, stripFramingHeaders);
   trailerSession.webRequest.onHeadersReceived(headerFilter, stripFramingHeaders);
 
-  trailerSession.webRequest.onBeforeRequest({ urls: BLOCKED_HOSTS }, (_, cb) =>
-    cb({ cancel: true }),
+  trailerSession.webRequest.onBeforeRequest(
+    { urls: BLOCKED_HOST_PATTERNS },
+    (_, cb) => cb({ cancel: true }),
   );
 
-  playerSession.webRequest.onBeforeRequest(
-    { urls: [...BLOCKED_HOSTS, ...MEDIA_URL_PATTERNS] },
-    (details, callback) => {
-      const { url } = details;
-      const isMedia = url.includes(".m3u8") || url.includes(".vtt");
-
-      if (!isMedia) {
-        recordBlockedRequest(url);
-        callback({ cancel: true });
+  trailerSession.webRequest.onBeforeRequest(
+    { urls: ["*://*/*"] },
+    (details, cb) => {
+      if (!isShieldEnabled()) {
+        cb({});
         return;
       }
-
-      try {
-        const host = new URL(url).hostname;
-        if (isBlockedMediaHost(host)) {
-          recordBlockedRequest(url);
-          callback({ cancel: true });
-          return;
-        }
-      } catch {
-        /* keep going */
+      if (classifyRequestUrl(details.url, details.resourceType) === "block") {
+        hooks.recordBlockedRequest(details.url);
+        cb({ cancel: true });
+        return;
       }
-
-      const win = getMainWindow();
-      if (win && !win.isDestroyed()) {
-        if (url.includes(".m3u8")) {
-          const referer =
-            details.referrer ||
-            details.referer ||
-            (() => {
-              try {
-                return details.webContents?.getURL?.() || "";
-              } catch {
-                return "";
-              }
-            })();
-          win.webContents.send("m3u8-found", { url, referer });
-        } else if (url.includes(".vtt")) {
-          win.webContents.send("subtitle-found", {
-            url,
-            lang: extractSubtitleLang(url),
-          });
-        }
-      }
-      callback({});
+      cb({});
     },
+  );
+
+  playerSession.webRequest.onBeforeRequest({ urls: ["*://*/*"] }, (details, cb) =>
+    handlePlayerRequest(details, hooks, cb),
   );
 
   installYoutubeConsentCookies(playerSession, trailerSession);
 }
 
-module.exports = { setupSession, BLOCKED_HOSTS };
+module.exports = { setupSession, BLOCKED_HOST_PATTERNS };

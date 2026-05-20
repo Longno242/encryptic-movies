@@ -81,6 +81,10 @@ export const STORAGE_KEYS = {
   DL_SORT_DIR: "dlSortDir",
   DL_SHOW_UNTRACKED: "dlShowUntracked",
   EPISODE_RELEASE_CACHE: "episodeReleaseCache",
+  TITLE_META: "titleMeta",
+  CUSTOM_LISTS: "customLists",
+  ENCRYPTIC_SHIELD: "encrypticShieldEnabled",
+  PICK_MODE_HINT: "pickModeHintSeen",
 };
 
 export const getApiKey = () => storage.get(STORAGE_KEYS.API_KEY);

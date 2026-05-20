@@ -9,6 +9,10 @@ const SHORTCUTS = [
   { keys: ["Ctrl", "Z"], desc: "Navigate back" },
   { keys: ["Ctrl", "R"], desc: "Reload Encryptic Movies" },
   { keys: ["?"], desc: "Show this shortcuts panel" },
+  { keys: ["["], desc: "Previous TV episode (while playing)" },
+  { keys: ["]"], desc: "Next TV episode (while playing)" },
+  { keys: ["F"], desc: "Toggle player fullscreen" },
+  { keys: ["Space"], desc: "Play / pause (in embed video)" },
 ];
 
 function openExternal(url) {

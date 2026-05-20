@@ -9,7 +9,9 @@ const LEGACY_ROWS = [
 
 export const HOME_ROWS = [
   { id: "continue", label: "Continue Watching" },
+  { id: "becauseYouWatched", label: "Because You Watched" },
   { id: "similar", label: "Similar to…" },
+  { id: "animeTrending", label: "Trending Anime" },
   ...CATALOG_ROWS.map((r) => ({ id: r.id, label: r.label })),
   { id: "trendingMovies", label: "Trending Movies" },
   { id: "trendingTV", label: "Trending Series" },

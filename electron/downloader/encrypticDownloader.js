@@ -13,8 +13,15 @@ const https = require("https");
 const crypto = require("crypto");
 const { URL } = require("url");
 
-const CONCURRENCY = 6;
-const MAX_RETRIES = 3;
+/** One segment at a time — avoids CDN HTTP 429 rate limits */
+const CONCURRENCY = 1;
+const MAX_RETRIES = 15;
+const INITIAL_REQUEST_GAP_MS = 1100;
+const MAX_REQUEST_GAP_MS = 15000;
+const RATE_LIMIT_COOLDOWN_MS = 45000;
+const BURST_SEGMENT_COUNT = 12;
+const BURST_PAUSE_MS = 6000;
+const PRE_DOWNLOAD_COOLDOWN_MS = 8000;
 const PLAYER_PARTITION = "persist:player";
 const CHROME_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -58,7 +65,73 @@ function playerSession() {
   return session.fromPartition(PLAYER_PARTITION);
 }
 
-function requestBufferElectron(url, { headers = {}, timeoutMs = 120000 } = {}) {
+let lastRequestAt = 0;
+let rateLimitUntil = 0;
+let requestGapMs = INITIAL_REQUEST_GAP_MS;
+let burstSegmentsSincePause = 0;
+
+function isRateLimitError(err) {
+  const msg = err?.message || String(err);
+  return /429|rate.?limit|too many requests/i.test(msg);
+}
+
+function resetDownloadPacing() {
+  lastRequestAt = 0;
+  rateLimitUntil = 0;
+  requestGapMs = INITIAL_REQUEST_GAP_MS;
+  burstSegmentsSincePause = 0;
+}
+
+async function paceBeforeRequest() {
+  const now = Date.now();
+  if (now < rateLimitUntil) {
+    await new Promise((r) => setTimeout(r, rateLimitUntil - now));
+  }
+  const gap = Math.max(0, requestGapMs - (Date.now() - lastRequestAt));
+  if (gap > 0) await new Promise((r) => setTimeout(r, gap));
+  lastRequestAt = Date.now();
+}
+
+function parseRetryAfterMs(response) {
+  try {
+    const raw =
+      response?.headers?.["retry-after"]?.[0] ||
+      response?.headers?.["Retry-After"]?.[0];
+    if (!raw) return 0;
+    const sec = parseInt(raw, 10);
+    if (!Number.isNaN(sec)) return sec * 1000;
+    const when = Date.parse(raw);
+    if (!Number.isNaN(when)) return Math.max(0, when - Date.now());
+  } catch {
+    /* ignore */
+  }
+  return 0;
+}
+
+function noteRateLimit(extraMs = 0) {
+  requestGapMs = Math.min(
+    MAX_REQUEST_GAP_MS,
+    Math.round(requestGapMs * 1.75),
+  );
+  rateLimitUntil =
+    Date.now() +
+    Math.max(RATE_LIMIT_COOLDOWN_MS, extraMs, requestGapMs * 8);
+  burstSegmentsSincePause = 0;
+}
+
+async function paceAfterSegment() {
+  burstSegmentsSincePause++;
+  if (burstSegmentsSincePause < BURST_SEGMENT_COUNT) return;
+  burstSegmentsSincePause = 0;
+  await new Promise((r) => setTimeout(r, BURST_PAUSE_MS));
+}
+
+function partialDirFor(outputDir, title) {
+  return path.join(outputDir, `.encryptic-partial-${safeFileName(title)}`);
+}
+
+async function requestBufferElectron(url, { headers = {}, timeoutMs = 120000 } = {}) {
+  await paceBeforeRequest();
   return new Promise((resolve, reject) => {
     let settled = false;
     const done = (fn, val) => {
@@ -99,9 +172,14 @@ function requestBufferElectron(url, { headers = {}, timeoutMs = 120000 } = {}) {
       }
       if (code !== 200) {
         clearTimeout(timer);
+        if (code === 429) noteRateLimit(parseRetryAfterMs(response));
         done(
           reject,
-          new Error(`HTTP ${code} — stream host blocked the download (try playing a bit longer first)`),
+          new Error(
+            code === 429
+              ? "HTTP 429"
+              : `HTTP ${code} — stream host blocked the download`,
+          ),
         );
         return;
       }
@@ -124,23 +202,65 @@ function requestBufferElectron(url, { headers = {}, timeoutMs = 120000 } = {}) {
   });
 }
 
-function requestBufferNode(url, { headers = {}, timeoutMs = 120000 } = {}) {
+function isTlsError(err) {
+  const msg = err?.message || String(err);
+  return /certificate|altnames|UNABLE_TO_VERIFY|self[- ]signed|ERR_TLS/i.test(msg);
+}
+
+function formatRequestError(err, url) {
+  const msg = err?.message || String(err);
+  if (!isTlsError(err)) return msg;
+  if (/asus|blocking\.|hns\.tm/i.test(msg)) {
+    return (
+      "Your network/router (ASUS AiProtection or DNS filter) is blocking this stream host with a fake HTTPS certificate. " +
+      "Disable router web protection or try another network, then retry the download."
+    );
+  }
+  try {
+    const host = new URL(url).hostname;
+    return `TLS certificate error for ${host}. Restart the app and retry; if playback works but download fails, check antivirus HTTPS scanning.`;
+  } catch {
+    return `TLS certificate error: ${msg}`;
+  }
+}
+
+async function requestBufferNode(
+  url,
+  { headers = {}, timeoutMs = 120000, insecure = false } = {},
+) {
+  await paceBeforeRequest();
   return new Promise((resolve, reject) => {
     const parsed = new URL(url);
     const lib = parsed.protocol === "https:" ? https : http;
+    const reqOpts = {
+      headers: { "User-Agent": CHROME_UA, Accept: "*/*", ...headers },
+      timeout: timeoutMs,
+    };
+    if (parsed.protocol === "https:" && insecure) {
+      reqOpts.rejectUnauthorized = false;
+    }
     const req = lib.get(
       url,
-      { headers: { "User-Agent": CHROME_UA, Accept: "*/*", ...headers }, timeout: timeoutMs },
+      reqOpts,
       (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          requestBufferNode(resolveUrl(url, res.headers.location), { headers, timeoutMs })
+          requestBufferNode(resolveUrl(url, res.headers.location), {
+            headers,
+            timeoutMs,
+            insecure,
+          })
             .then(resolve)
             .catch(reject);
           res.resume();
           return;
         }
         if (res.statusCode !== 200) {
-          reject(new Error(`HTTP ${res.statusCode}`));
+          if (res.statusCode === 429) {
+            noteRateLimit(parseRetryAfterMs(res));
+            reject(new Error("HTTP 429"));
+          } else {
+            reject(new Error(`HTTP ${res.statusCode}`));
+          }
           res.resume();
           return;
         }
@@ -160,18 +280,58 @@ function requestBufferNode(url, { headers = {}, timeoutMs = 120000 } = {}) {
 
 async function requestBuffer(url, opts = {}) {
   const { headers = {}, timeoutMs = 120000, usePlayerSession = true } = opts;
-  try {
-    if (usePlayerSession) {
+  let electronErr;
+  if (usePlayerSession) {
+    try {
       return await requestBufferElectron(url, { headers, timeoutMs });
+    } catch (e) {
+      electronErr = e;
     }
-  } catch {
-    /* fall through */
+  }
+  if (electronErr) {
+    if (isRateLimitError(electronErr)) {
+      throw electronErr;
+    }
+    if (isTlsError(electronErr)) {
+      try {
+        return await requestBufferNode(url, {
+          headers,
+          timeoutMs,
+          insecure: true,
+        });
+      } catch {
+        throw new Error(formatRequestError(electronErr, url));
+      }
+    }
+    try {
+      return await requestBufferNode(url, { headers, timeoutMs });
+    } catch {
+      throw electronErr;
+    }
   }
   return requestBufferNode(url, { headers, timeoutMs });
 }
 
-async function fetchText(url, opts) {
-  const buf = await requestBuffer(url, opts);
+async function requestWithRetry(url, opts, onLine, label) {
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await requestBuffer(url, opts);
+    } catch (e) {
+      if (!isRateLimitError(e) || attempt >= MAX_RETRIES) throw e;
+      const wait = Math.min(120000, 6000 * 2 ** (attempt - 1));
+      emit(
+        onLine,
+        `Rate limited on ${label} — waiting ${Math.round(wait / 1000)}s (attempt ${attempt}/${MAX_RETRIES})`,
+      );
+      rateLimitUntil = Date.now() + wait;
+      await new Promise((r) => setTimeout(r, wait));
+    }
+  }
+  throw new Error("HTTP 429");
+}
+
+async function fetchText(url, opts, onLine, label = "playlist") {
+  const buf = await requestWithRetry(url, opts, onLine, label);
   return buf.toString("utf8");
 }
 
@@ -306,12 +466,17 @@ function segmentIv(keyIv, sequenceIndex) {
   return iv;
 }
 
-async function loadAesKey(keyUri, headers) {
-  return requestBuffer(keyUri, { headers });
+async function loadAesKey(keyUri, headers, onLine) {
+  return requestWithRetry(keyUri, { headers }, onLine, "decryption key");
 }
 
-async function downloadSegment(segUrl, headers, keyBuf, keyIv, seqIndex) {
-  let data = await requestBuffer(segUrl, { headers });
+async function downloadSegment(segUrl, headers, keyBuf, keyIv, seqIndex, onLine) {
+  let data = await requestWithRetry(
+    segUrl,
+    { headers },
+    onLine,
+    `segment ${seqIndex + 1}`,
+  );
   if (keyBuf) {
     data = decryptAes128(data, keyBuf, segmentIv(keyIv, seqIndex));
   }
@@ -524,7 +689,10 @@ function cleanupDownloadArtifacts(outputDir, tempDir) {
   try {
     for (const entry of fs.readdirSync(outputDir)) {
       const full = path.join(outputDir, entry);
-      if (entry.startsWith(".encryptic-") || entry.startsWith("_encryptic_")) {
+      if (
+        entry.startsWith(".encryptic-partial-") ||
+        entry.startsWith("_encryptic_")
+      ) {
         try {
           fs.rmSync(full, { recursive: true, force: true });
         } catch {
@@ -554,7 +722,7 @@ async function downloadDirectMp4({
 }) {
   emit(onLine, `[download] Destination: ${outputPath}`);
   emit(onLine, "Encryptic: downloading video file…");
-  const data = await requestBuffer(url, { headers });
+  const data = await requestWithRetry(url, { headers }, onLine, "video file");
   if (isCancelled()) throw new Error("Cancelled");
   fs.writeFileSync(outputPath, data);
   emit(onLine, `[download] 100% of ~${formatBytes(data.length)}`);
@@ -575,8 +743,15 @@ async function downloadHls({
   referer = "",
 }) {
   const headers = buildStreamHeaders(m3u8Url, referer);
+
+  emit(
+    onLine,
+    `Encryptic: cooling down ${Math.round(PRE_DOWNLOAD_COOLDOWN_MS / 1000)}s before download (avoids rate limits after playback)…`,
+  );
+  await new Promise((r) => setTimeout(r, PRE_DOWNLOAD_COOLDOWN_MS));
+
   let playlistUrl = m3u8Url;
-  let playlistText = await fetchText(playlistUrl, { headers });
+  let playlistText = await fetchText(playlistUrl, { headers }, onLine, "playlist");
 
   if (isCancelled()) throw new Error("Cancelled");
 
@@ -585,7 +760,12 @@ async function downloadHls({
     const variant = pickBestVariantUrl(playlistText, playlistUrl);
     if (!variant) throw new Error("No streams found in master playlist");
     playlistUrl = variant;
-    playlistText = await fetchText(playlistUrl, { headers });
+    playlistText = await fetchText(
+      playlistUrl,
+      { headers },
+      onLine,
+      "quality stream",
+    );
   }
 
   const media = parseMediaPlaylist(playlistText, playlistUrl);
@@ -593,11 +773,17 @@ async function downloadHls({
   if (!segments.length) throw new Error("No segments in playlist");
 
   emit(onLine, `[hlsnative] Total fragments: ${segments.length}`);
+  emit(
+    onLine,
+    `Encryptic: steady mode — one segment at a time (~${Math.round(
+      requestGapMs / 1000,
+    )}s gap) to avoid rate limits`,
+  );
 
   let keyBuf = null;
   if (keyMethod === "AES-128" && keyUri) {
     emit(onLine, "Encryptic: fetching decryption key…");
-    keyBuf = await loadAesKey(keyUri, headers);
+    keyBuf = await loadAesKey(keyUri, headers, onLine);
   } else if (keyMethod && keyMethod !== "NONE") {
     throw new Error(`Unsupported encryption: ${keyMethod}`);
   }
@@ -605,7 +791,31 @@ async function downloadHls({
   fs.mkdirSync(tempDir, { recursive: true });
   const segmentPaths = new Array(segments.length);
   let completed = 0;
+  let resumed = 0;
   let nextIndex = 0;
+
+  for (let seq = 0; seq < segments.length; seq++) {
+    const dest = path.join(
+      tempDir,
+      `seg_${String(seq).padStart(5, "0")}.ts`,
+    );
+    try {
+      if (fs.existsSync(dest) && fs.statSync(dest).size > 512) {
+        segmentPaths[seq] = dest;
+        completed++;
+        resumed++;
+      }
+    } catch {
+      /* ignore corrupt stat */
+    }
+  }
+  if (resumed > 0) {
+    emit(
+      onLine,
+      `Encryptic: resuming — ${resumed} segments already on disk`,
+    );
+    emit(onLine, `(frag ${completed}/${segments.length})`);
+  }
 
   const downloadOne = async (seq) => {
     const seg = segments[seq];
@@ -613,29 +823,36 @@ async function downloadHls({
       tempDir,
       `seg_${String(seq).padStart(5, "0")}.ts`,
     );
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      if (isCancelled()) throw new Error("Cancelled");
-      try {
-        const data = await downloadSegment(
-          seg.url,
-          headers,
-          keyBuf,
-          keyIv,
-          seg.index,
+    if (segmentPaths[seq]) return;
+
+    if (isCancelled()) throw new Error("Cancelled");
+    try {
+      const data = await downloadSegment(
+        seg.url,
+        headers,
+        keyBuf,
+        keyIv,
+        seg.index,
+        onLine,
+      );
+      fs.writeFileSync(dest, data);
+      segmentPaths[seq] = dest;
+      completed++;
+      emit(onLine, `(frag ${completed}/${segments.length})`);
+      await paceAfterSegment();
+      if (requestGapMs > INITIAL_REQUEST_GAP_MS) {
+        requestGapMs = Math.max(
+          INITIAL_REQUEST_GAP_MS,
+          Math.round(requestGapMs * 0.94),
         );
-        fs.writeFileSync(dest, data);
-        segmentPaths[seq] = dest;
-        completed++;
-        emit(onLine, `(frag ${completed}/${segments.length})`);
-        return;
-      } catch (e) {
-        if (attempt < MAX_RETRIES) {
-          emit(onLine, `Retrying (${attempt}/${MAX_RETRIES})`);
-          await new Promise((r) => setTimeout(r, 800 * attempt));
-        } else {
-          throw e;
-        }
       }
+    } catch (e) {
+      if (isRateLimitError(e)) {
+        throw new Error(
+          "HTTP 429 — host rate-limited this download. Close the player, wait 5–10 minutes, then start again (saved segments will resume).",
+        );
+      }
+      throw e;
     }
   };
 
@@ -686,12 +903,10 @@ async function runEncrypticDownload({
   jobId,
   referer = "",
 }) {
+  resetDownloadPacing();
   fs.mkdirSync(outputDir, { recursive: true });
   const base = safeFileName(title);
-  const tempDir = path.join(
-    os.tmpdir(),
-    `encryptic-dl-${jobId || "work"}`,
-  );
+  const tempDir = partialDirFor(outputDir, base);
 
   const isHls =
     /\.m3u8(\?|$)/i.test(m3u8Url) ||

@@ -7,6 +7,7 @@ const {
   BrowserWindow,
   ipcMain,
   session,
+  screen,
   webContents,
   Notification,
 } = require("electron");
@@ -20,6 +21,15 @@ const allmangaIpc = require("./ipc/allmanga");
 const playerIpc = require("./ipc/player");
 const discordIpc = require("./ipc/discord");
 const { setupSession } = require("./session/setup");
+const { classifyRequestUrl } = require("./session/adblockLists");
+const { attachShieldToWebContents } = require("./shield/injectAllFrames");
+const {
+  isShieldEnabled,
+  setShieldEnabled,
+} = require("./shield/enabled");
+const {
+  EXIT_NATIVE_FULLSCREEN_SCRIPT,
+} = require("./playerExitNativeFullscreen");
 
 app.commandLine.appendSwitch(
   "js-flags",
@@ -70,6 +80,12 @@ function createMainWindow() {
   downloadsIpc.loadDownloads();
   blockStats.loadBlockStats();
 
+  const notifyPlayerWindowFullscreen = (on) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("player-window-fullscreen-changed", !!on);
+    }
+  };
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -90,6 +106,9 @@ function createMainWindow() {
     },
   });
 
+  mainWindow.on("enter-full-screen", () => notifyPlayerWindowFullscreen(true));
+  mainWindow.on("leave-full-screen", () => notifyPlayerWindowFullscreen(false));
+
   session.defaultSession.webRequest.onHeadersReceived(
     { urls: ["*://image.tmdb.org/*"] },
     (details, callback) => {
@@ -104,17 +123,39 @@ function createMainWindow() {
   mainWindow.webContents.on("did-attach-webview", (_, wc) => {
     ensurePlayerSessions();
 
+    const isPlayer =
+      wc.session === session.fromPartition("persist:player");
+
     try {
-      if (wc.session === session.fromPartition("persist:player")) {
+      if (isPlayer) {
         playerWebContentsIds.add(wc.id);
         wc.once("destroyed", () => playerWebContentsIds.delete(wc.id));
       }
     } catch {}
 
     wc.setWindowOpenHandler(() => ({ action: "deny" }));
-    wc.on("enter-html-full-screen", () =>
-      mainWindow.webContents.send("webview-enter-fullscreen"),
-    );
+
+    if (isPlayer) {
+      wc.on("will-navigate", (event, url) => {
+        if (classifyRequestUrl(url) === "block") {
+          event.preventDefault();
+          blockStats.recordBlockedRequest(url);
+        }
+      });
+      wc.on("will-redirect", (event, url) => {
+        if (classifyRequestUrl(url) === "block") {
+          event.preventDefault();
+          blockStats.recordBlockedRequest(url);
+        }
+      });
+      attachShieldToWebContents(wc, true);
+    }
+
+    wc.on("enter-html-full-screen", () => {
+      if (isPlayer) {
+        wc.executeJavaScript(EXIT_NATIVE_FULLSCREEN_SCRIPT, true).catch(() => {});
+      }
+    });
     wc.on("leave-html-full-screen", () =>
       mainWindow.webContents.send("webview-leave-fullscreen"),
     );
@@ -191,6 +232,10 @@ discordIpc.register();
 blockStats.init(getMainWindow);
 
 ipcMain.handle("get-block-stats", () => blockStats.getBlockStats());
+ipcMain.handle("get-encryptic-shield", () => isShieldEnabled());
+ipcMain.handle("set-encryptic-shield", (_, enabled) =>
+  setShieldEnabled(enabled),
+);
 
 ipcMain.on("player-stopped", () => {
   discordIpc.discordRpc.setBrowsing().catch(() => {});
@@ -320,6 +365,34 @@ ipcMain.handle(
 );
 
 let pipWindow = null;
+let playerWindowBoundsBeforeFs = null;
+
+ipcMain.handle("set-player-window-fullscreen", (_, enabled) => {
+  const win = getMainWindow();
+  if (!win || win.isDestroyed()) return { ok: false };
+  try {
+    if (enabled) {
+      if (!playerWindowBoundsBeforeFs) {
+        playerWindowBoundsBeforeFs = win.getBounds();
+      }
+      const display = screen.getDisplayMatching(win.getBounds());
+      if (process.platform === "win32") {
+        // Frameless Windows windows: fill the monitor (setFullScreen alone is unreliable).
+        win.setBounds(display.bounds);
+      }
+      win.setFullScreen(true);
+    } else {
+      win.setFullScreen(false);
+      if (playerWindowBoundsBeforeFs) {
+        win.setBounds(playerWindowBoundsBeforeFs);
+        playerWindowBoundsBeforeFs = null;
+      }
+    }
+    return { ok: true, fullscreen: win.isFullScreen() };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
 
 ipcMain.handle("open-pip-window", (_, { url, title }) => {
   if (!url || url === "about:blank") return { ok: false, reason: "no-url" };
@@ -351,8 +424,10 @@ ipcMain.handle("open-pip-window", (_, { url, title }) => {
   });
 
   pipWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  attachShieldToWebContents(pipWindow.webContents, true);
   pipWindow.webContents.on("did-attach-webview", (_, wc) => {
     wc.setWindowOpenHandler(() => ({ action: "deny" }));
+    attachShieldToWebContents(wc, true);
   });
 
   pipWindow.loadURL(url);
@@ -394,8 +469,18 @@ ipcMain.handle("popout-window-minimize", () => {
 });
 ipcMain.handle("popout-window-toggle-maximize", () => {
   if (!pipWindow || pipWindow.isDestroyed()) return;
-  if (pipWindow.isMaximized()) pipWindow.unmaximize();
-  else pipWindow.maximize();
+  if (pipWindow.isFullScreen()) {
+    pipWindow.setFullScreen(false);
+    pipWindow.setBounds({ width: 960, height: 540 });
+    return;
+  }
+  if (pipWindow.isMaximized()) {
+    pipWindow.unmaximize();
+    return;
+  }
+  const display = screen.getDisplayMatching(pipWindow.getBounds());
+  if (process.platform === "win32") pipWindow.setBounds(display.bounds);
+  pipWindow.setFullScreen(true);
 });
 ipcMain.handle("popout-window-close", () => {
   if (pipWindow && !pipWindow.isDestroyed()) pipWindow.close();

@@ -8,6 +8,14 @@ export async function fetchMovieCredits(movieId, apiKey) {
   }
 }
 
+export async function fetchTVCredits(tvId, apiKey) {
+  try {
+    return await tmdbFetch(`/tv/${tvId}/credits`, apiKey);
+  } catch {
+    return { cast: [], crew: [] };
+  }
+}
+
 export async function fetchPerson(personId, apiKey) {
   return tmdbFetch(`/person/${personId}`, apiKey);
 }

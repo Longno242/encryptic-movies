@@ -18,14 +18,29 @@ const MediaCard = memo(function MediaCard({
   onMarkUnwatched,
   ageRating,
   restricted,
-  modern = false,
+  modern = true,
   launching = false,
+  staggerIndex = 0,
+  pickMode = false,
+  isPicked = false,
+  onQuickPlay,
+  onQuickAdd,
+  onQuickSave,
+  showQuickActions = true,
 }) {
   const [pressing, setPressing] = useState(false);
+  const [tilt, setTilt] = useState({ x: 0, y: 0 });
+  const [ripple, setRipple] = useState(null);
+  const cardRef = useRef(null);
+
   const title = item.title || item.name;
   const year = (item.release_date || item.first_air_date || "").slice(0, 4);
   const isTV = item.media_type === "tv";
   const isAnime = isAnimeContent(item);
+  const score = item.vote_average > 0 ? item.vote_average.toFixed(1) : null;
+  const scorePct = item.vote_average
+    ? Math.min(100, Math.round((item.vote_average / 10) * 100))
+    : 0;
 
   const rawDate = item.release_date || item.first_air_date;
   const today = new Date();
@@ -65,93 +80,251 @@ const MediaCard = memo(function MediaCard({
     };
   }, [menu]);
 
+  const handleTilt = useCallback((e) => {
+    if (pickMode) return;
+    const el = cardRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width - 0.5;
+    const y = (e.clientY - rect.top) / rect.height - 0.5;
+    setTilt({ x: x * 10, y: -y * 10 });
+  }, [pickMode]);
+
+  const resetTilt = useCallback(() => setTilt({ x: 0, y: 0 }), []);
+
+  const handleClick = (e) => {
+    if (pickMode && onQuickAdd) {
+      e.stopPropagation();
+      onQuickAdd(item);
+      return;
+    }
+    if (cardRef.current) {
+      const rect = cardRef.current.getBoundingClientRect();
+      setRipple({
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+      });
+      setTimeout(() => setRipple(null), 500);
+    }
+    onClick?.(e);
+  };
+
+  const badgeClass = isUnreleased
+    ? "card-badge--unreleased"
+    : isAnime
+      ? "card-badge--anime"
+      : isTV
+        ? "card-badge--tv"
+        : "card-badge--hd";
+
+  const badgeLabel = isUnreleased
+    ? "SOON"
+    : isAnime
+      ? "ANIME"
+      : isTV
+        ? "SERIES"
+        : "FILM";
+
   return (
     <>
       <article
+        ref={cardRef}
         className={[
           "card",
+          modern && "card--cinema",
           modern && "card--modern",
           launching && "card--launching",
           pressing && "card--pressing",
+          staggerIndex >= 0 && "card--stagger",
           isWatched && "ep-watched",
           isUnreleased && "card--unreleased",
+          pickMode && "card--pick-mode",
+          isPicked && "card--picked",
         ]
           .filter(Boolean)
           .join(" ")}
-        onClick={onClick}
+        style={{
+          "--card-i": staggerIndex,
+          "--tilt-x": `${tilt.x}deg`,
+          "--tilt-y": `${tilt.y}deg`,
+        }}
+        onClick={handleClick}
         onContextMenu={isUnreleased ? undefined : openMenu}
         onPointerDown={() => setPressing(true)}
         onPointerUp={() => setPressing(false)}
-        onPointerLeave={() => setPressing(false)}
+        onPointerLeave={() => {
+          setPressing(false);
+          resetTilt();
+        }}
         onPointerCancel={() => setPressing(false)}
+        onMouseMove={modern && !pickMode ? handleTilt : undefined}
+        onMouseLeave={modern ? resetTilt : undefined}
       >
-        <div className="card-poster">
-          {item.poster_path ? (
-            <img src={imgUrl(item.poster_path, "w342")} alt={title} loading="lazy" />
-          ) : (
-            <div className="no-poster">
-              {isTV ? <TVIcon /> : <FilmIcon />}
-              <span style={{ fontSize: 10, color: "var(--text3)" }}>No image</span>
-            </div>
-          )}
+        {ripple && (
+          <span
+            className="card-ripple"
+            style={{ left: ripple.x, top: ripple.y }}
+            aria-hidden
+          />
+        )}
 
-          {ageRating && (
-            <div
-              className={`card-age-badge${restricted ? " card-age-badge--restricted" : ""}`}
-            >
-              {restricted ? <RatingLockIcon size={9} /> : <RatingShieldIcon size={9} />}
-              {ageRating}
-            </div>
-          )}
+        {pickMode && (
+          <div className="card-pick-ring" aria-hidden>
+            <span className="card-pick-icon">{isPicked ? "✓" : "+"}</span>
+          </div>
+        )}
 
-          <div className="card-overlay">
-            {isUnreleased ? (
-              <div className="card-unreleased-overlay">
-                <span className="card-unreleased-label">Unreleased</span>
-              </div>
+        <div className="card-ambient" aria-hidden />
+        <div className="card-inner">
+          <div className="card-poster">
+            {item.poster_path ? (
+              <img
+                src={imgUrl(item.poster_path, "w500")}
+                alt=""
+                loading="lazy"
+                decoding="async"
+              />
             ) : (
-              <div className="card-play">
-                <PlayIcon />
+              <div className="no-poster">
+                {isTV ? <TVIcon /> : <FilmIcon />}
+                <span>No poster</span>
+              </div>
+            )}
+
+            <div className="card-grain" aria-hidden />
+            <div className="card-vignette" aria-hidden />
+            <div className="card-shine" aria-hidden />
+
+            <div className="card-meta-top">
+              {score && !isUnreleased && (
+                <div
+                  className="card-score-ring"
+                  style={{ "--score": scorePct }}
+                  title={`${score}/10`}
+                >
+                  <svg viewBox="0 0 36 36" className="card-score-svg">
+                    <circle className="card-score-bg" cx="18" cy="18" r="15" />
+                    <circle className="card-score-fill" cx="18" cy="18" r="15" />
+                  </svg>
+                  <span className="card-score-num">{score}</span>
+                </div>
+              )}
+              <span className={`card-badge ${badgeClass}`}>{badgeLabel}</span>
+            </div>
+
+            {ageRating && (
+              <div
+                className={`card-age-badge${restricted ? " card-age-badge--restricted" : ""}`}
+              >
+                {restricted ? (
+                  <RatingLockIcon size={9} />
+                ) : (
+                  <RatingShieldIcon size={9} />
+                )}
+                {ageRating}
+              </div>
+            )}
+
+            <div className="card-bottom-stack">
+              <div className="card-info-overlay">
+                <h3 className="card-title" title={title}>
+                  {title}
+                </h3>
+                <div className="card-year">
+                  {year && <span>{year}</span>}
+                  {year && <span className="card-year-dot" />}
+                  <span>{isTV ? "TV Series" : "Movie"}</span>
+                </div>
+              </div>
+
+              {!isUnreleased && showQuickActions && !pickMode && (
+                <div className="card-quick-actions">
+                  <button
+                    type="button"
+                    className="card-quick-btn card-quick-btn--play"
+                    title="Play"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      (onQuickPlay || onClick)?.(e);
+                    }}
+                  >
+                    <PlayIcon />
+                  </button>
+                  {onQuickSave && (
+                    <button
+                      type="button"
+                      className="card-quick-btn"
+                      title="Watchlist"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onQuickSave(item);
+                      }}
+                    >
+                      ★
+                    </button>
+                  )}
+                  {onQuickAdd && (
+                    <button
+                      type="button"
+                      className="card-quick-btn"
+                      title="Add to list"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onQuickAdd(item);
+                      }}
+                    >
+                      +
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {!isUnreleased && !pickMode && !showQuickActions && (
+                <div className="card-hover-cta">
+                  <span className="card-play-pill">
+                    <PlayIcon />
+                    <span>Watch</span>
+                  </span>
+                </div>
+              )}
+
+              {pickMode && !isUnreleased && (
+                <div className="card-hover-cta card-hover-cta--pick">
+                  <span className="card-play-pill">
+                    {isPicked ? "Added" : "Tap to add"}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {isUnreleased && (
+              <div className="card-overlay card-overlay--soon">
+                <span className="card-unreleased-label">Coming soon</span>
+              </div>
+            )}
+
+            {!isUnreleased && progress > 0 && !isWatched && (
+              <div className="card-progress">
+                <div
+                  className="card-progress-fill"
+                  style={{ width: `${Math.min(progress, 100)}%` }}
+                />
+              </div>
+            )}
+
+            {!isUnreleased && isWatched && (
+              <div className="card-watched-badge">
+                <WatchedIcon size={28} />
               </div>
             )}
           </div>
-
-          {!isUnreleased && progress > 0 && !isWatched && (
-            <div className="card-progress">
-              <div
-                className="card-progress-fill"
-                style={{ width: `${Math.min(progress, 100)}%` }}
-              />
-            </div>
-          )}
-
-          {!isUnreleased && isWatched && (
-            <div className="card-watched-badge">
-              <WatchedIcon size={26} />
-            </div>
-          )}
         </div>
-
-        <div className="card-info">
-          <div className="card-title" title={title}>
-            {title}
-          </div>
-          <div className="card-year">
-            {year} · {isTV ? "Series" : "Movie"}
-          </div>
-        </div>
-
-        <span
-          className={`card-badge${isUnreleased ? " card-badge--unreleased" : ""}${isAnime && !isUnreleased ? " card-badge--anime" : ""}`}
-        >
-          {isUnreleased ? "SOON" : isAnime ? "ANIME" : isTV ? "TV" : "HD"}
-        </span>
       </article>
 
       {menu && (
         <div
           ref={menuRef}
-          className="context-menu"
+          className="context-menu context-menu--glass"
           style={{ top: menu.y, left: menu.x }}
           onClick={(e) => e.stopPropagation()}
         >

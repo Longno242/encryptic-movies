@@ -253,6 +253,7 @@ export function itemsForHomeRatings({
   byYearItems = [],
   activeCategory = null,
   showAllRows = true,
+  animeTrending = [],
 }) {
   const seen = new Set();
   const out = [];
@@ -271,6 +272,7 @@ export function itemsForHomeRatings({
   trendingTV.slice(0, 8).forEach((i) => add({ ...i, media_type: "tv" }));
   similarItems.forEach(add);
   topRatedItems.forEach(add);
+  animeTrending.forEach((i) => add({ ...i, media_type: i.media_type || "tv" }));
 
   if (!catalog) return out;
 

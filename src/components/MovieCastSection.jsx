@@ -1,10 +1,15 @@
 import { useState, useEffect, useMemo } from "react";
 import CastCard from "./CastCard";
 import MediaBrowseRow from "./MediaBrowseRow";
-import { fetchMovieCredits, fetchPersonMovieCredits } from "../utils/person";
+import {
+  fetchMovieCredits,
+  fetchTVCredits,
+  fetchPersonMovieCredits,
+} from "../utils/person";
 
 export default function MovieCastSection({
   movieId,
+  tvId,
   apiKey,
   credits: creditsProp,
   movieTitle,
@@ -21,8 +26,11 @@ export default function MovieCastSection({
   const [personFilms, setPersonFilms] = useState([]);
   const [filmsLoading, setFilmsLoading] = useState(false);
 
+  const mediaId = tvId || movieId;
+  const fetchCredits = tvId ? fetchTVCredits : fetchMovieCredits;
+
   useEffect(() => {
-    if (!movieId || !apiKey) return;
+    if (!mediaId || !apiKey) return;
     let cancelled = false;
 
     const applyCredits = (data) => {
@@ -40,13 +48,13 @@ export default function MovieCastSection({
     }
 
     setLoading(true);
-    fetchMovieCredits(movieId, apiKey).then((data) => {
+    fetchCredits(mediaId, apiKey).then((data) => {
       if (!cancelled) applyCredits(data);
     });
     return () => {
       cancelled = true;
     };
-  }, [movieId, apiKey, creditsProp]);
+  }, [mediaId, apiKey, creditsProp, tvId, movieId]);
 
   useEffect(() => {
     if (!expandedPerson?.id || !apiKey) {

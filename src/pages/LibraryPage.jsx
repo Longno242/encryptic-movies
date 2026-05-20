@@ -79,6 +79,9 @@ export default function LibraryPage({
                   onMarkUnwatched={onMarkUnwatched}
                   ageRating={r.cert}
                   restricted={restr}
+                  modern
+                  showQuickActions={false}
+                  staggerIndex={i}
                 />
               );
             })}
@@ -104,7 +107,7 @@ export default function LibraryPage({
             )}
           </div>
           <div className="cards-grid">
-            {saved.map((item) => {
+            {saved.map((item, i) => {
               const r = getRating(item);
               const restr = itemRestricted(item);
               return (
@@ -117,6 +120,8 @@ export default function LibraryPage({
                   onMarkUnwatched={onMarkUnwatched}
                   ageRating={r.cert}
                   restricted={restr}
+                  modern
+                  staggerIndex={i}
                 />
               );
             })}

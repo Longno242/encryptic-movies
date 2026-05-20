@@ -199,6 +199,15 @@ export const ExternalLinkIcon = () => (
   </svg>
 );
 
+export const IssuesIcon = () => (
+  <svg viewBox="0 0 24 24" {...stroke}>
+    <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
+    <rect x="9" y="3" width="6" height="4" rx="1" />
+    <path d="M9 12h6" />
+    <path d="M9 16h6" />
+  </svg>
+);
+
 export const WarningIcon = ({ size = 20 }) => (
   <svg viewBox="0 0 24 24" width={size} height={size} {...stroke}>
     <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />

@@ -626,8 +626,18 @@ export default function DownloadsPage({
                     dl.tmdbId ? () => setSubtitleModalDl(dl) : null
                   }
                   onOpenLog={
-                    dl.logPath && dl.status === "error"
-                      ? () => window.electron.openPath(dl.logPath)
+                    dl.status === "error"
+                      ? async () => {
+                          const res = await window.electron?.openDownloadLog?.({
+                            id: dl.id,
+                            logPath: dl.logPath,
+                          });
+                          if (res && !res.ok) {
+                            window.alert(
+                              `Could not open log: ${res.error || "file missing"}. Check Settings → Downloads folder permissions.`,
+                            );
+                          }
+                        }
                       : null
                   }
                 />
@@ -1335,11 +1345,15 @@ const LocalFileCard = memo(function LocalFileCard({
               <TrashIcon />
             </button>
           )}
-          {onOpenLog && dl.logPath && dl.status === "error" && (
+          {onOpenLog && dl.status === "error" && (
             <button
+              type="button"
               className="btn btn-ghost dl-btn--sm"
-              onClick={onOpenLog}
-              title="Open error log"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenLog();
+              }}
+              title="Open error log in Notepad"
               style={{ color: "var(--red)", fontSize: 11 }}
             >
               View Log

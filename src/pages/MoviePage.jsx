@@ -25,7 +25,26 @@ import {
   NON_ANIME_DEFAULT_SOURCE,
 } from "../utils/api";
 import { usePlayerFullscreen } from "../hooks/usePlayerFullscreen";
+import { useFastPlayerLoad } from "../hooks/useFastPlayerLoad";
+import { usePlayerSourceFallback } from "../hooks/usePlayerSourceFallback";
+import {
+  FAILOVER_SOURCE,
+  getNextMovieSource,
+  getRememberedMovieSource,
+  rememberMovieSource,
+} from "../utils/moviePlayback";
+import {
+  getNextAnimeSource,
+  getRememberedAnimeSource,
+  rememberAnimeSource,
+} from "../utils/animePlayback";
+import { useSourceStatus } from "../hooks/useSourceStatus";
+import { getTitleSource, setTitleSource } from "../utils/titleMeta";
+import SourceStatusBanner from "../components/SourceStatusBanner";
+import AnimeIssuesBanner from "../components/AnimeIssuesBanner";
+import TitleNotes from "../components/TitleNotes";
 import { applyDubInWebview } from "../utils/playerDub";
+import { nudgeEmbedPlayback } from "../utils/playerAutoplay";
 import { getPlaybackLang, embedLangLabel } from "../utils/playbackLang";
 import {
   PlayIcon,
@@ -103,6 +122,7 @@ export default function MoviePage({
     () => storage.get(STORAGE_KEYS.ALLMANGA_DUB_MODE) || "sub",
   );
   const [dubReloadNonce, setDubReloadNonce] = useState(0);
+  const [playerReloadNonce, setPlayerReloadNonce] = useState(0);
   const [anilistData, setAnilistData] = useState(null);
   const [menuPos, setMenuPos] = useState(null);
   const sourceRef = useRef(null);
@@ -119,10 +139,8 @@ export default function MoviePage({
   const [resolveError, setResolveError] = useState(null);
   const [collection, setCollection] = useState(null); // { name, parts }
   const [movieCredits, setMovieCredits] = useState(null);
-  // Webview loading overlay
-  const [webviewLoading, setWebviewLoading] = useState(false);
   const { playerFullscreen, toggleFullscreen, exitFullscreen } =
-    usePlayerFullscreen(playing, playerSource);
+    usePlayerFullscreen(playing, playerSource, webviewRef);
   // pipOpen=true: main webview shows about:blank, pop-out window has the real player
   const [pipOpen, setPipOpen] = useState(false);
   const pipUrlRef = useRef(null); // URL to restore when pop-out closes
@@ -174,14 +192,110 @@ export default function MoviePage({
   const embedUrlOpts = useMemo(
     () => ({
       dubMode,
-      originalLang: d.original_language || "en",
+      originalLang: d.original_language || (isAnime ? "ja" : "en"),
       isAnime,
-      reloadToken: dubReloadNonce,
+      anilistId: anilistData?.id ?? null,
+      malId: anilistData?.idMal ?? null,
+      anilistEpisode: 1,
+      useAnilistPlayback: !!(isAnime && anilistData?.id),
+      reloadToken: `${dubReloadNonce}-${playerReloadNonce}`,
       preferredLang: playbackLang,
       preferredLangName: embedLangLabel(playbackLang),
     }),
-    [dubMode, d.original_language, isAnime, dubReloadNonce, playbackLang],
+    [
+      dubMode,
+      d.original_language,
+      isAnime,
+      anilistData?.id,
+      anilistData?.idMal,
+      dubReloadNonce,
+      playerReloadNonce,
+      playbackLang,
+    ],
   );
+
+  const embedUrl = useMemo(() => {
+    if (!playing || pipOpen || sourceIsAsync(playerSource)) return null;
+    return getSourceUrl(
+      playerSource,
+      "movie",
+      item.id,
+      null,
+      null,
+      embedUrlOpts,
+    );
+  }, [playing, pipOpen, playerSource, item.id, embedUrlOpts]);
+
+  const {
+    status: sourceStatus,
+    reportTrying,
+    reportSuccess,
+    reportFailover,
+    clearStatus,
+  } = useSourceStatus();
+
+  const fallbackHandlers = useRef({
+    onSuccess: () => {},
+    onFail: () => {},
+    onStuck: () => {},
+  });
+
+  const {
+    webviewLoading,
+    setWebviewLoading,
+    loadSlow,
+    retryLoad,
+    bumpLoading,
+    playerWrapClass,
+  } = useFastPlayerLoad({
+    playing,
+    webviewRef,
+    playerSource,
+    itemKey: item.id,
+    streamReadyKey: m3u8Url || "",
+    onLoadSuccess: () => {
+      fallbackHandlers.current.onSuccess();
+      const wv = webviewRef.current;
+      if (!wv) return;
+      void nudgeEmbedPlayback(wv);
+      if (
+        sourceSupportsSubDub(playerSource) &&
+        !sourceIsAsync(playerSource)
+      ) {
+        void applyDubInWebview(wv, dubMode, embedUrlOpts.preferredLangName);
+      }
+    },
+    onLoadFail: (e) => fallbackHandlers.current.onFail?.(e),
+    onLoadStuck: () => fallbackHandlers.current.onStuck?.(),
+  });
+
+  const { onLoadSuccess, onLoadFail, onLoadStuck, resetFallback } =
+    usePlayerSourceFallback({
+      enabled: playing && !sourceIsAsync(playerSource),
+      playerSource,
+      setPlayerSource,
+      setWebviewLoading,
+      primaryFailoverSource: FAILOVER_SOURCE,
+      getNextSource: (id) =>
+        isAnime ? getNextAnimeSource(id) : getNextMovieSource(id),
+      onRemember: (id) => {
+        if (isAnime) rememberAnimeSource(item.id, id);
+        else rememberMovieSource(item.id, id);
+      },
+      onFailover: reportFailover,
+      onSourceSuccess: (id) => {
+        reportSuccess(id);
+        setTitleSource("movie", item.id, id);
+        storage.set("playerSource", id);
+      },
+    });
+
+  fallbackHandlers.current = {
+    onSuccess: onLoadSuccess,
+    onFail: onLoadFail,
+    onStuck: onLoadStuck,
+  };
+
   const title = d.title || d.name;
   const year = (d.release_date || "").slice(0, 4);
   const mediaName = `${title}${year ? " (" + year + ")" : ""}`;
@@ -293,8 +407,11 @@ export default function MoviePage({
     setResolvedPlayerUrl(null);
     setResolvingUrl(false);
     setResolveError(null);
-    setWebviewLoading(true); // instantly blank the player on every source/item switch
-  }, [item.id, playerSource, dubMode]);
+    if (playing) {
+      bumpLoading();
+      setPlayerReloadNonce((n) => n + 1);
+    }
+  }, [item.id, playerSource, dubMode, playing, bumpLoading]);
 
   // Force embed reload when SUB/DUB changes (subtitle URL params don't switch audio).
   useEffect(() => {
@@ -310,13 +427,13 @@ export default function MoviePage({
       null,
       embedUrlOpts,
     );
-    setWebviewLoading(true);
+    bumpLoading();
     try {
       wv.src = url;
     } catch {
       /* ignore */
     }
-  }, [dubReloadNonce]);
+  }, [dubReloadNonce, bumpLoading]);
 
   // Fetch AniList data + auto-set source for anime/non-anime
   useEffect(() => {
@@ -328,18 +445,37 @@ export default function MoviePage({
         },
       );
       const allowed = new Set(getSourcesForMedia(true).map((s) => s.id));
+      const remembered = getRememberedAnimeSource(item.id);
       const saved = storage.get("playerSource");
+      const titleRemembered = getTitleSource("movie", item.id);
+      const pick =
+        (remembered && allowed.has(remembered) && remembered) ||
+        (titleRemembered && allowed.has(titleRemembered) && titleRemembered) ||
+        (saved && allowed.has(saved) && saved) ||
+        ANIME_DEFAULT_SOURCE;
       if (!allowed.has(playerSource)) {
-        setPlayerSource(allowed.has(saved) ? saved : ANIME_DEFAULT_SOURCE);
+        setPlayerSource(pick);
+      } else if (remembered && allowed.has(remembered)) {
+        setPlayerSource(remembered);
+      } else if (titleRemembered && allowed.has(titleRemembered)) {
+        setPlayerSource(titleRemembered);
       }
     } else {
-      if (isAnimePlayerSource(playerSource)) {
-        const saved = storage.get("playerSource");
-        setPlayerSource(
-          saved && !isAnimePlayerSource(saved)
-            ? saved
-            : NON_ANIME_DEFAULT_SOURCE,
-        );
+      const allowed = new Set(getSourcesForMedia(false).map((s) => s.id));
+      const remembered = getRememberedMovieSource(item.id);
+      const titleRemembered = getTitleSource("movie", item.id);
+      const saved = storage.get("playerSource");
+      const pick =
+        (remembered && allowed.has(remembered) && remembered) ||
+        (titleRemembered && allowed.has(titleRemembered) && titleRemembered) ||
+        (saved && allowed.has(saved) && saved) ||
+        NON_ANIME_DEFAULT_SOURCE;
+      if (!allowed.has(playerSource)) {
+        setPlayerSource(pick);
+      } else if (remembered && allowed.has(remembered)) {
+        setPlayerSource(remembered);
+      } else if (titleRemembered && allowed.has(titleRemembered)) {
+        setPlayerSource(titleRemembered);
       }
     }
     return () => {
@@ -449,11 +585,6 @@ export default function MoviePage({
     seekBackCooldownRef.current = 0;
   }, [item.id, isWatched]);
 
-  // Show loader instantly when play starts
-  useEffect(() => {
-    if (playing) setWebviewLoading(true);
-  }, [playing]);
-
   // ── Webview memory cleanup ────────────────────────────────────────────────
   // useLayoutEffect fires synchronously BEFORE React mutates the DOM, so the
   // webview is still attached when we navigate it to about:blank.
@@ -480,27 +611,13 @@ export default function MoviePage({
     if (!playing) clearDiscordPresence();
   }, [playing]);
 
-  // Attach webview load events so we know when the new source has painted
   useEffect(() => {
-    if (!playing) return;
-    const wv = webviewRef.current;
-    if (!wv) return;
-    const done = () => {
-      setWebviewLoading(false);
-      if (
-        sourceSupportsSubDub(playerSource) &&
-        !sourceIsAsync(playerSource)
-      ) {
-        void applyDubInWebview(wv, dubMode, embedUrlOpts.preferredLangName);
-      }
-    };
-    wv.addEventListener("did-finish-load", done);
-    wv.addEventListener("did-fail-load", done);
-    return () => {
-      wv.removeEventListener("did-finish-load", done);
-      wv.removeEventListener("did-fail-load", done);
-    };
-  }, [playing, playerSource, item.id, dubMode]);
+    resetFallback();
+  }, [item.id, playerSource, resetFallback]);
+
+  useEffect(() => {
+    if (playing && playerSource) reportTrying(playerSource);
+  }, [playing, playerSource, item.id, reportTrying]);
 
   // ── Auto-track progress + auto-watched every 5s ──────────────────────────
   useEffect(() => {
@@ -723,6 +840,7 @@ export default function MoviePage({
     <div
       className={`fade-in page-enter movie-page${playerFullscreen ? " page--player-fs" : ""}`}
     >
+      {isAnime && !playerFullscreen && <AnimeIssuesBanner />}
       <div className="detail-hero">
         <div
           className="detail-bg"
@@ -795,6 +913,7 @@ export default function MoviePage({
               </div>
             )}
             <p className="detail-overview">{displayOverview}</p>
+            <TitleNotes mediaType="movie" id={item.id} />
             {!isWatched && displayPct > 0 && (
               <div className="progress-bar-row" style={{ marginBottom: 12 }}>
                 <div className="progress-bar-outer">
@@ -910,33 +1029,37 @@ export default function MoviePage({
 
       {playing && !restricted && !isUnreleased && (
         <div className="section section--player-active">
+          {isAnime && !playerFullscreen && (
+            <AnimeIssuesBanner variant="player" />
+          )}
+          <SourceStatusBanner status={sourceStatus} onDismiss={clearStatus} />
           <div
-            className={`player-wrap${playerFullscreen ? " player-wrap--fullscreen" : ""}`}
+            className={`player-wrap${playerWrapClass}${playerFullscreen ? " player-wrap--fullscreen" : ""}`}
             ref={playerWrapRef}
           >
             {/* Universal source-loading overlay, shown instantly on every source/item switch */}
             {webviewLoading && !resolveError && (
-              <div
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  zIndex: 10,
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: "rgba(0,0,0,0.92)",
-                  gap: 14,
-                  borderRadius: "inherit",
-                }}
-              >
-                <div className="spinner" />
-                <span style={{ fontSize: 14, color: "var(--text2)" }}>
-                  {resolvingUrl
-                    ? "Looking up movie on AllManga…"
-                    : `Loading ${PLAYER_SOURCES.find((s) => s.id === playerSource)?.label ?? "source"}…`}
-                </span>
-              </div>
+              <>
+                <div className="player-load-slim" aria-hidden>
+                  <div className="player-load-slim__bar" />
+                </div>
+                <div className="player-load-chip">
+                  <span className="player-load-chip__text">
+                    {resolvingUrl
+                      ? "Looking up on AllManga…"
+                      : `Buffering ${PLAYER_SOURCES.find((s) => s.id === playerSource)?.label ?? "source"}…`}
+                  </span>
+                  {loadSlow && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={retryLoad}
+                    >
+                      Slow? Tap to retry
+                    </button>
+                  )}
+                </div>
+              </>
             )}
             {/* AllManga: error if lookup failed */}
             {sourceIsAsync(playerSource) && resolveError && !resolvingUrl && (
@@ -1012,20 +1135,14 @@ export default function MoviePage({
               </div>
             )}
             <webview
+              key={`${item.id}-${playerSource}-${playerReloadNonce}`}
               ref={webviewRef}
               src={
                 pipOpen
                   ? "about:blank"
                   : sourceIsAsync(playerSource)
                     ? resolvedPlayerUrl || "about:blank"
-                    : getSourceUrl(
-                        playerSource,
-                        "movie",
-                        item.id,
-                        null,
-                        null,
-                        embedUrlOpts,
-                      )
+                    : embedUrl || "about:blank"
               }
               partition="persist:player"
               allowpopups="false"
@@ -1036,11 +1153,6 @@ export default function MoviePage({
                 width: "100%",
                 height: "100%",
                 border: "none",
-                visibility:
-                  webviewLoading ||
-                  (sourceIsAsync(playerSource) && !resolvedPlayerUrl)
-                    ? "hidden"
-                    : "visible",
               }}
             />
             {/* Left-side overlay button group, flex row, no fixed px offsets */}
@@ -1179,6 +1291,8 @@ export default function MoviePage({
                       setResolvedPlayerUrl(null);
                       setResolvingUrl(false);
                       setResolveError(null);
+                      setPlayerReloadNonce((n) => n + 1);
+                      bumpLoading();
                     }}
                   >
                     <span>{src.label}</span>

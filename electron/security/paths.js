@@ -31,6 +31,7 @@ function collectDownloadRoots(downloads) {
   for (const d of downloads || []) {
     if (d.downloadPath) roots.add(resolveAbsolute(d.downloadPath));
     if (d.filePath) files.add(resolveAbsolute(d.filePath));
+    if (d.logPath) files.add(resolveAbsolute(d.logPath));
     for (const sp of d.subtitlePaths || []) {
       const p = typeof sp === "string" ? sp : sp?.path;
       if (p) files.add(resolveAbsolute(p));

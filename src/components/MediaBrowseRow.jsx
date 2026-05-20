@@ -15,6 +15,11 @@ const MediaBrowseRow = memo(function MediaBrowseRow({
   ratingsMap = {},
   launchingKey = null,
   rowIndex = 0,
+  pickMode = false,
+  onQuickAdd,
+  onQuickSave,
+  activePickListId = null,
+  isItemPicked,
 }) {
   const scrollerRef = useRef(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -117,7 +122,17 @@ const MediaBrowseRow = memo(function MediaBrowseRow({
                   ageRating={rd.cert}
                   restricted={rd.restricted}
                   modern
+                  staggerIndex={index}
                   launching={launchingKey === cardKey}
+                  pickMode={pickMode}
+                  isPicked={
+                    isItemPicked
+                      ? isItemPicked(item)
+                      : false
+                  }
+                  onQuickAdd={onQuickAdd}
+                  onQuickSave={onQuickSave}
+                  onQuickPlay={handleClick}
                 />
               </div>
             );

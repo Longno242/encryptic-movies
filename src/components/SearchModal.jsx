@@ -1,13 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { tmdbFetch, imgUrl } from "../utils/api";
+import { discoverSearch } from "../utils/discoverSearch";
+import MediaCard from "./MediaCard";
 import { SearchIcon, CloseIcon } from "./Icons";
 import { storage } from "../utils/storage";
 
 const HISTORY_KEY = "searchHistory";
 const MAX_HISTORY = 12;
-const PLACEHOLDER_POSTER =
-  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='58'%3E%3Crect fill='%23222' width='40' height='58'/%3E%3C/svg%3E";
-
 function loadHistory() {
   return storage.get(HISTORY_KEY) || [];
 }
@@ -21,6 +19,9 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState(loadHistory);
+  const [type, setType] = useState("");
+  const [year, setYear] = useState("");
+  const [minRating, setMinRating] = useState("");
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -29,8 +30,7 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
   }, []);
 
   useEffect(() => {
-    const trimmed = query.trim();
-    if (!trimmed) {
+    if (offline || !apiKey) {
       setResults([]);
       return;
     }
@@ -39,19 +39,17 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
     const timer = setTimeout(async () => {
       setLoading(true);
       try {
-        const data = await tmdbFetch(
-          `/search/multi?query=${encodeURIComponent(trimmed)}&page=1`,
+        const items = await discoverSearch({
           apiKey,
-        );
-        if (alive) {
-          setResults(
-            (data.results || [])
-              .filter((r) => r.media_type !== "person")
-              .slice(0, 12),
-          );
-        }
+          query,
+          type: type || "",
+          year: year ? Number(year) : undefined,
+          genreId: undefined,
+          minRating: minRating ? Number(minRating) : undefined,
+        });
+        if (alive) setResults(items);
       } catch {
-        /* offline or API error */
+        if (alive) setResults([]);
       }
       if (alive) setLoading(false);
     }, 380);
@@ -60,13 +58,16 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
       alive = false;
       clearTimeout(timer);
     };
-  }, [query, apiKey]);
+  }, [query, apiKey, offline, type, year, minRating]);
 
   const pushHistory = useCallback((term) => {
     const trimmed = term.trim();
     if (!trimmed) return;
     setHistory((prev) => {
-      const next = [trimmed, ...prev.filter((h) => h !== trimmed)].slice(0, MAX_HISTORY);
+      const next = [trimmed, ...prev.filter((h) => h !== trimmed)].slice(
+        0,
+        MAX_HISTORY,
+      );
       persistHistory(next);
       return next;
     });
@@ -94,6 +95,7 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
   };
 
   const showHistory = !query && history.length > 0;
+  const showDiscover = !query.trim();
 
   return (
     <div
@@ -103,7 +105,7 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
       aria-label="Search Encryptic Movies"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="search-box">
+      <div className="search-box search-box--advanced">
         <div className="search-input-wrap">
           <SearchIcon />
           <input
@@ -127,20 +129,42 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
           </button>
         </div>
 
+        <div className="search-filters">
+          <select
+            className="search-filters__select"
+            value={type}
+            onChange={(e) => setType(e.target.value)}
+            aria-label="Media type"
+          >
+            <option value="">Movies & TV</option>
+            <option value="movie">Movies only</option>
+            <option value="tv">TV only</option>
+          </select>
+          <input
+            type="number"
+            className="search-filters__input"
+            placeholder="Year"
+            min="1900"
+            max="2030"
+            value={year}
+            onChange={(e) => setYear(e.target.value)}
+          />
+          <select
+            className="search-filters__select"
+            value={minRating}
+            onChange={(e) => setMinRating(e.target.value)}
+            aria-label="Minimum rating"
+          >
+            <option value="">Any rating</option>
+            <option value="6">6+</option>
+            <option value="7">7+</option>
+            <option value="8">8+</option>
+          </select>
+        </div>
+
         <div className="search-results">
           {offline && (
-            <div
-              style={{
-                padding: "12px 20px",
-                background: "rgba(255,165,0,0.1)",
-                borderBottom: "1px solid var(--border)",
-                fontSize: 13,
-                color: "#ff9800",
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-              }}
-            >
+            <div className="search-offline-banner">
               No internet — search is unavailable offline.
             </div>
           )}
@@ -155,38 +179,30 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
             <div className="search-empty">No results for “{query}”</div>
           )}
 
-          {!loading &&
-            results.map((r) => (
-              <button
-                key={`${r.media_type}-${r.id}`}
-                type="button"
-                className="search-result"
-                onClick={() => pickResult(r)}
-              >
-                <img
-                  src={r.poster_path ? imgUrl(r.poster_path, "w92") : PLACEHOLDER_POSTER}
-                  alt=""
+          {!loading && results.length > 0 && (
+            <div className="cards-grid cards-grid--search search-results--cards">
+              {results.map((r, i) => (
+                <MediaCard
+                  key={`${r.media_type}-${r.id}`}
+                  item={r}
+                  onClick={() => pickResult(r)}
+                  progress={0}
+                  staggerIndex={i}
+                  modern
                 />
-                <div className="search-result-info">
-                  <div className="search-result-title">{r.title || r.name}</div>
-                  <div className="search-result-meta">
-                    {(r.release_date || r.first_air_date || "").slice(0, 4)}
-                    {r.vote_average ? ` · ★ ${r.vote_average.toFixed(1)}` : ""}
-                  </div>
-                </div>
-                <span
-                  className={`search-result-type ${r.media_type === "tv" ? "type-tv" : "type-movie"}`}
-                >
-                  {r.media_type === "tv" ? "Series" : "Movie"}
-                </span>
-              </button>
-            ))}
+              ))}
+            </div>
+          )}
 
           {showHistory && (
             <div className="search-history">
               <div className="search-history-header">
                 <span className="search-history-label">Recent searches</span>
-                <button type="button" className="search-history-clear" onClick={clearHistory}>
+                <button
+                  type="button"
+                  className="search-history-clear"
+                  onClick={clearHistory}
+                >
                   Clear all
                 </button>
               </div>
@@ -217,9 +233,9 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
             </div>
           )}
 
-          {!query && history.length === 0 && (
+          {!query && history.length === 0 && showDiscover && (
             <div className="search-hint">
-              Search Encryptic Movies for movies and series · <kbd>ESC</kbd> to close
+              Search or use filters for popular picks · <kbd>ESC</kbd> to close
             </div>
           )}
         </div>

@@ -8,6 +8,7 @@ import {
   FilmIcon,
   SettingsIcon,
   DownloadsQueueIcon,
+  IssuesIcon,
   QuitIcon,
   BackIcon,
   HelpIcon,
@@ -114,6 +115,12 @@ export default function Sidebar({
           active={page === "downloads"}
           badge={activeDownloads > 0 ? activeDownloads : null}
           onClick={() => onNavigate("downloads")}
+        />
+        <NavBtn
+          icon={<IssuesIcon />}
+          label="Issues & bugs"
+          active={page === "issues"}
+          onClick={() => onNavigate("issues")}
         />
       </nav>
 

@@ -1378,11 +1378,17 @@ function LibraryPrivacySection() {
     const v = storage.get(STORAGE_KEYS.HISTORY_ENABLED);
     return v === 0 || v === false ? false : true;
   });
+  const [shieldEnabled, setShieldEnabled] = useState(() => {
+    const v = storage.get(STORAGE_KEYS.ENCRYPTIC_SHIELD);
+    return v !== false && v !== 0;
+  });
   const [saved, setSaved] = useState(false);
 
   const handleSave = () => {
     storage.set(STORAGE_KEYS.LIBRARY_SORT, sort);
     storage.set(STORAGE_KEYS.HISTORY_ENABLED, historyEnabled ? 1 : 0);
+    storage.set(STORAGE_KEYS.ENCRYPTIC_SHIELD, shieldEnabled);
+    window.electron?.setEncrypticShield?.(shieldEnabled);
     window.dispatchEvent(
       new CustomEvent("mov:library-sort-changed", { detail: sort }),
     );
@@ -1463,6 +1469,30 @@ function LibraryPrivacySection() {
             Watching" will not work.
           </div>
         )}
+      </div>
+
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <Toggle
+            value={shieldEnabled}
+            onChange={(v) => {
+              setShieldEnabled(v);
+              storage.set(STORAGE_KEYS.ENCRYPTIC_SHIELD, v);
+              window.electron?.setEncrypticShield?.(v);
+            }}
+          />
+          <div>
+            <div
+              style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}
+            >
+              Encryptic Shield
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
+              Blocks ads and scam overlays in embed players. Turn off only if a
+              source stops loading.
+            </div>
+          </div>
+        </div>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>

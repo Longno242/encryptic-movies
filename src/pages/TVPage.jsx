@@ -32,7 +32,29 @@ import {
   NON_ANIME_DEFAULT_SOURCE,
 } from "../utils/api";
 import { usePlayerFullscreen } from "../hooks/usePlayerFullscreen";
+import { useFastPlayerLoad } from "../hooks/useFastPlayerLoad";
+import { usePlayerSourceFallback } from "../hooks/usePlayerSourceFallback";
+import {
+  FAILOVER_SOURCE,
+  getNextMovieSource,
+  rememberMovieSource,
+} from "../utils/moviePlayback";
+import {
+  getNextAnimeSource,
+  rememberAnimeSource,
+} from "../utils/animePlayback";
+import { useSourceStatus } from "../hooks/useSourceStatus";
+import { getTitleSource, setTitleSource } from "../utils/titleMeta";
+import SourceStatusBanner from "../components/SourceStatusBanner";
+import AnimeIssuesBanner from "../components/AnimeIssuesBanner";
+import TitleNotes from "../components/TitleNotes";
+import TVCastSection from "../components/TVCastSection";
+import {
+  buildAnimePlaybackOpts,
+  getRememberedAnimeSource,
+} from "../utils/animePlayback";
 import { applyDubInWebview } from "../utils/playerDub";
+import { nudgeEmbedPlayback } from "../utils/playerAutoplay";
 import { getPlaybackLang, embedLangLabel } from "../utils/playbackLang";
 import {
   BookmarkIcon,
@@ -376,6 +398,8 @@ export default function TVPage({
   downloadOnMount = false,
   downloadEpisode = null,
   onDownloadIntentHandled,
+  onSelect,
+  onSelectPerson,
 }) {
   const [details, setDetails] = useState(null);
   const [seasonData, setSeasonData] = useState(null);
@@ -421,9 +445,9 @@ export default function TVPage({
   const [episodeGroupData, setEpisodeGroupData] = useState(null); // Raw TMDB episode group response
   const [episodeGroupMap, setEpisodeGroupMap] = useState(null); // Map built from TMDB episode group
   // Webview loading overlay
-  const [webviewLoading, setWebviewLoading] = useState(false);
+  const webviewRef = useRef(null);
   const { playerFullscreen, toggleFullscreen, exitFullscreen } =
-    usePlayerFullscreen(playing, playerSource);
+    usePlayerFullscreen(playing, playerSource, webviewRef);
   const [pipOpen, setPipOpen] = useState(false);
   const pipUrlRef = useRef(null);
   const pipWebContentsIdRef = useRef(null); // cached WebContents ID of the pop-out window
@@ -436,7 +460,6 @@ export default function TVPage({
   );
   const sourceRef = useRef(null);
   const playerWrapRef = useRef(null);
-  const webviewRef = useRef(null);
   // Always-current refs for interval callbacks, avoids stale closures without restarting the interval
   const saveProgressRef = useRef(saveProgress);
   saveProgressRef.current = saveProgress;
@@ -608,13 +631,13 @@ export default function TVPage({
     setResolvedPlayerUrl(null);
     setResolvingUrl(false);
     setResolveError(null);
-    setWebviewLoading(true); // instantly blank the player on every source/episode switch
   }, [
     item.id,
     selectedEp?.episode_number,
     selectedSeason,
     playerSource,
     dubMode,
+    playing,
   ]);
 
   // Fetch AniList metadata + auto-set anime source
@@ -638,9 +661,20 @@ export default function TVPage({
           if (mounted) setAnilistLoading(false);
         });
       const allowed = new Set(getSourcesForMedia(true).map((s) => s.id));
+      const remembered = getRememberedAnimeSource(item.id);
+      const titleRemembered = getTitleSource("tv", item.id);
       const saved = storage.get("playerSource");
+      const pick =
+        (remembered && allowed.has(remembered) && remembered) ||
+        (titleRemembered && allowed.has(titleRemembered) && titleRemembered) ||
+        (saved && allowed.has(saved) && saved) ||
+        ANIME_DEFAULT_SOURCE;
       if (!allowed.has(playerSource)) {
-        setPlayerSource(allowed.has(saved) ? saved : ANIME_DEFAULT_SOURCE);
+        setPlayerSource(pick);
+      } else if (remembered && allowed.has(remembered)) {
+        setPlayerSource(remembered);
+      } else if (titleRemembered && allowed.has(titleRemembered)) {
+        setPlayerSource(titleRemembered);
       }
     } else {
       setAnilistLoading(false);
@@ -757,16 +791,103 @@ export default function TVPage({
   const d = details || item;
   const playbackLang = getPlaybackLang();
   const embedUrlOpts = useMemo(
-    () => ({
-      dubMode,
-      originalLang: d.original_language || "en",
+    () =>
+      buildAnimePlaybackOpts({
+        isAnime,
+        anilistData,
+        anilistSeasons,
+        selectedSeason,
+        selectedEp,
+        dubMode,
+        preferredLang: playbackLang,
+        originalLang: d.original_language || "ja",
+        reloadToken: dubReloadNonce,
+      }),
+    [
       isAnime,
-      reloadToken: dubReloadNonce,
-      preferredLang: playbackLang,
-      preferredLangName: embedLangLabel(playbackLang),
-    }),
-    [dubMode, d.original_language, isAnime, dubReloadNonce, playbackLang],
+      anilistData,
+      anilistSeasons,
+      selectedSeason,
+      selectedEp,
+      dubMode,
+      playbackLang,
+      d.original_language,
+      dubReloadNonce,
+    ],
   );
+
+  const {
+    status: sourceStatus,
+    reportTrying,
+    reportSuccess,
+    reportFailover,
+    clearStatus,
+  } = useSourceStatus();
+
+  const fallbackHandlers = useRef({
+    onSuccess: () => {},
+    onFail: () => {},
+    onStuck: () => {},
+  });
+  const episodeKey = `${selectedSeason}_${selectedEp?.episode_number ?? 0}`;
+
+  const {
+    webviewLoading,
+    setWebviewLoading,
+    loadSlow,
+    retryLoad,
+    bumpLoading,
+    playerWrapClass,
+  } = useFastPlayerLoad({
+    playing,
+    webviewRef,
+    playerSource,
+    itemKey: item.id,
+    episodeKey,
+    streamReadyKey: m3u8Url || "",
+    onLoadSuccess: () => {
+      fallbackHandlers.current.onSuccess();
+      const wv = webviewRef.current;
+      if (!wv) return;
+      void nudgeEmbedPlayback(wv);
+      if (
+        sourceSupportsSubDub(playerSource) &&
+        !sourceIsAsync(playerSource)
+      ) {
+        void applyDubInWebview(wv, dubMode, embedUrlOpts.preferredLangName);
+      }
+    },
+    onLoadFail: (e) => fallbackHandlers.current.onFail?.(e),
+    onLoadStuck: () => fallbackHandlers.current.onStuck?.(),
+  });
+
+  const { onLoadSuccess, onLoadFail, onLoadStuck, resetFallback } =
+    usePlayerSourceFallback({
+      enabled: playing && !sourceIsAsync(playerSource),
+      playerSource,
+      setPlayerSource,
+      setWebviewLoading,
+      primaryFailoverSource: FAILOVER_SOURCE,
+      getNextSource: (id) =>
+        isAnime ? getNextAnimeSource(id) : getNextMovieSource(id),
+      onRemember: (id) => {
+        if (isAnime) rememberAnimeSource(item.id, id);
+        else rememberMovieSource(item.id, id);
+      },
+      onFailover: reportFailover,
+      onSourceSuccess: (id) => {
+        reportSuccess(id);
+        setTitleSource("tv", item.id, id);
+        storage.set("playerSource", id);
+      },
+    });
+
+  fallbackHandlers.current = {
+    onSuccess: onLoadSuccess,
+    onFail: onLoadFail,
+    onStuck: onLoadStuck,
+  };
+
   const discordPresenceRef = useRef({ title: "", posterUrl: "" });
   discordPresenceRef.current = {
     title: d.name || d.title || "TV Show",
@@ -790,11 +911,8 @@ export default function TVPage({
     return [...tmdbSeasons, ...specials];
   }, [d.seasons, tmdbSeasons, isAnime, failedSeasons]);
   const useAnilistSeasons = useMemo(
-    () =>
-      isAnime &&
-      anilistSeasons?.length > 0 &&
-      (tmdbSeasons.length <= 1 || anilistSeasons.length > tmdbSeasons.length),
-    [isAnime, anilistSeasons, tmdbSeasons],
+    () => isAnime && anilistSeasons?.length > 0,
+    [isAnime, anilistSeasons],
   );
 
   // Episode-group virtual seasons (highest priority, e.g. Netflix order)
@@ -1067,10 +1185,6 @@ export default function TVPage({
   }, [currentProgressKey]);
 
   // Show loader instantly when playback starts
-  useEffect(() => {
-    if (playing) setWebviewLoading(true);
-  }, [playing]);
-
   // ── Webview memory cleanup ────────────────────────────────────────────────
   // useLayoutEffect fires synchronously BEFORE React mutates the DOM, so the
   // webview is still attached when we navigate it to about:blank.
@@ -1097,23 +1211,11 @@ export default function TVPage({
     if (!playing) clearDiscordPresence();
   }, [playing]);
 
-  // Attach webview load events so we know when the new source has painted.
-  // Also poll for video duration so AniSkip markers appear without waiting for the 5s progress tick.
+  // Poll video duration for AniSkip (metadata may load after buffering starts)
   useEffect(() => {
     if (!playing) return;
     const wv = webviewRef.current;
     if (!wv) return;
-    const done = () => {
-      setWebviewLoading(false);
-      if (
-        sourceSupportsSubDub(playerSource) &&
-        !sourceIsAsync(playerSource)
-      ) {
-        void applyDubInWebview(wv, dubMode, embedUrlOpts.preferredLangName);
-      }
-    };
-    wv.addEventListener("did-finish-load", done);
-    wv.addEventListener("did-fail-load", done);
 
     // Poll up to 30s for video duration (metadata may load after buffering starts)
     let attempts = 0;
@@ -1136,11 +1238,13 @@ export default function TVPage({
     }, 1000);
 
     return () => {
-      wv.removeEventListener("did-finish-load", done);
-      wv.removeEventListener("did-fail-load", done);
       clearInterval(pollDuration);
     };
-  }, [playing, playerSource, item.id, selectedEp?.episode_number, dubMode]);
+  }, [playing, playerSource, item.id, selectedEp?.episode_number]);
+
+  useEffect(() => {
+    resetFallback();
+  }, [item.id, selectedSeason, selectedEp?.episode_number, playerSource, resetFallback]);
 
   // ── AniSkip: fetch timings when episode changes ───────────────────────────
   useEffect(() => {
@@ -1440,6 +1544,47 @@ export default function TVPage({
     [d, selectedSeason, onHistory],
   );
 
+  const currentEpIndex = useMemo(() => {
+    if (!selectedEp || !currentSeasonEpisodes.length) return -1;
+    return currentSeasonEpisodes.findIndex(
+      (e) => e.episode_number === selectedEp.episode_number,
+    );
+  }, [selectedEp, currentSeasonEpisodes]);
+
+  const goAdjacentEpisode = useCallback(
+    (dir) => {
+      const idx = currentEpIndex + dir;
+      if (idx < 0 || idx >= currentSeasonEpisodes.length) return;
+      playEpisode(currentSeasonEpisodes[idx]);
+    },
+    [currentEpIndex, currentSeasonEpisodes, playEpisode],
+  );
+
+  useEffect(() => {
+    if (!playing) return;
+    const onKey = (e) => {
+      if (
+        e.target?.matches?.("input, textarea, [contenteditable='true']")
+      ) {
+        return;
+      }
+      if (e.key === "[") {
+        e.preventDefault();
+        goAdjacentEpisode(-1);
+      }
+      if (e.key === "]") {
+        e.preventDefault();
+        goAdjacentEpisode(1);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [playing, goAdjacentEpisode]);
+
+  useEffect(() => {
+    if (playing && playerSource) reportTrying(playerSource);
+  }, [playing, playerSource, item.id, selectedEp?.episode_number, reportTrying]);
+
   const startDownloadFlow = useCallback(() => {
     if (currentEpDownload) {
       onGoToDownloads?.(currentEpDownload.id);
@@ -1535,6 +1680,7 @@ export default function TVPage({
       )}
       {!loading && (
         <>
+          {isAnime && !playerFullscreen && <AnimeIssuesBanner />}
           <div className="detail-hero">
             <div
               className="detail-bg"
@@ -1610,6 +1756,7 @@ export default function TVPage({
                   </div>
                 )}
                 <p className="detail-overview">{displayOverview}</p>
+                <TitleNotes mediaType="tv" id={item.id} />
                 <div className="detail-actions">
                   {trailerKey &&
                     (restricted ? (
@@ -1642,6 +1789,10 @@ export default function TVPage({
 
           {playing && selectedEp && (
             <div className="section section--player-active">
+              {isAnime && !playerFullscreen && (
+                <AnimeIssuesBanner variant="player" />
+              )}
+              <SourceStatusBanner status={sourceStatus} onDismiss={clearStatus} />
               <div
                 className="player-episode-bar"
                 style={{
@@ -1649,8 +1800,30 @@ export default function TVPage({
                   display: "flex",
                   alignItems: "center",
                   gap: 12,
+                  flexWrap: "wrap",
                 }}
               >
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  disabled={currentEpIndex <= 0}
+                  onClick={() => goAdjacentEpisode(-1)}
+                  title="Previous episode ([)"
+                >
+                  ← Prev
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  disabled={
+                    currentEpIndex < 0 ||
+                    currentEpIndex >= currentSeasonEpisodes.length - 1
+                  }
+                  onClick={() => goAdjacentEpisode(1)}
+                  title="Next episode (])"
+                >
+                  Next →
+                </button>
                 <span className="tag tag-red">
                   Season {selectedSeason} · E{selectedEp.episode_number}
                 </span>
@@ -1676,32 +1849,32 @@ export default function TVPage({
                 )}
               </div>
               <div
-                className={`player-wrap${playerFullscreen ? " player-wrap--fullscreen" : ""}`}
+                className={`player-wrap${playerWrapClass}${playerFullscreen ? " player-wrap--fullscreen" : ""}`}
                 ref={playerWrapRef}
               >
                 {/* Universal source-loading overlay, shown instantly on every source/episode switch */}
                 {webviewLoading && !resolveError && (
-                  <div
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      zIndex: 10,
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      background: "rgba(0,0,0,0.92)",
-                      gap: 14,
-                      borderRadius: "inherit",
-                    }}
-                  >
-                    <div className="spinner" />
-                    <span style={{ fontSize: 14, color: "var(--text2)" }}>
-                      {resolvingUrl
-                        ? "Looking up episode on AllManga…"
-                        : `Loading ${PLAYER_SOURCES.find((s) => s.id === playerSource)?.label ?? "source"}…`}
-                    </span>
-                  </div>
+                  <>
+                    <div className="player-load-slim" aria-hidden>
+                      <div className="player-load-slim__bar" />
+                    </div>
+                    <div className="player-load-chip">
+                      <span className="player-load-chip__text">
+                        {resolvingUrl
+                          ? "Looking up on AllManga…"
+                          : `Buffering ${PLAYER_SOURCES.find((s) => s.id === playerSource)?.label ?? "source"}…`}
+                      </span>
+                      {loadSlow && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={retryLoad}
+                        >
+                          Slow? Tap to retry
+                        </button>
+                      )}
+                    </div>
+                  </>
                 )}
                 {/* error if lookup failed */}
                 {isAsync && resolveError && !resolvingUrl && (
@@ -1777,6 +1950,7 @@ export default function TVPage({
                   </div>
                 )}
                 <webview
+                  key={`${item.id}-${playerSource}-${selectedSeason}-${selectedEp?.episode_number ?? 0}-${dubReloadNonce}`}
                   ref={webviewRef}
                   src={
                     pipOpen
@@ -1804,10 +1978,6 @@ export default function TVPage({
                     outline: "none",
                     boxShadow: "none",
                     background: "black",
-                    visibility:
-                      webviewLoading || (isAsync && !resolvedPlayerUrl)
-                        ? "hidden"
-                        : "visible",
                   }}
                   tabIndex={-1}
                 />
@@ -2167,6 +2337,19 @@ export default function TVPage({
                 tmdbId={item.id}
               />
             </div>
+          )}
+
+          {(playing || details) && (
+            <TVCastSection
+              tvId={item.id}
+              apiKey={apiKey}
+              movieTitle={title}
+              onSelectPerson={onSelectPerson}
+              onSelectMovie={onSelect}
+              watched={watched}
+              onMarkWatched={onMarkWatched}
+              onMarkUnwatched={onMarkUnwatched}
+            />
           )}
 
           <div className="section">

@@ -1,10 +1,19 @@
 import { resolveDsLang, embedLangLabel } from "./playbackLang";
+import {
+  buildAnimeEmbedUrl,
+  buildAnimeTmdbFallbackUrl,
+  shouldUseAnilistPlayback,
+} from "./animePlayback";
 
 const TMDB_ROOT = "https://api.themoviedb.org/3";
 const TMDB_IMG = "https://image.tmdb.org/t/p";
 
 export const imgUrl = (path, size = "w500") =>
-  path ? `${TMDB_IMG}/${size}${path}` : null;
+  path
+    ? path.startsWith("http")
+      ? path
+      : `${TMDB_IMG}/${size}${path}`
+    : null;
 
 // ── Global error hooks (registered once from App) ─────────────────────────────
 let onAuthFailure = null;
@@ -121,7 +130,7 @@ export const PLAYER_SOURCES = [
     id: "vidsrc",
     label: "VidSrc",
     tag: null,
-    note: null,
+    note: "AniList for anime",
     supportsProgress: true,
     progressViaFrames: true,
     movieUrl: (id) => `https://vidsrc.to/embed/movie/${id}`,
@@ -138,6 +147,17 @@ export const PLAYER_SOURCES = [
     movieUrl: (id) => `https://www.2embed.online/embed/movie/${id}`,
     tvUrl: (id, season, ep) =>
       `https://www.2embed.online/embed/tv/${id}/${season}/${ep}`,
+  },
+  {
+    id: "neon",
+    label: "Neon",
+    tag: null,
+    note: "auto fallback",
+    supportsProgress: true,
+    progressViaFrames: true,
+    movieUrl: (id) => `https://ezvidapi.com/embed/movie/${id}`,
+    tvUrl: (id, season, ep) =>
+      `https://ezvidapi.com/embed/tv/${id}/${season}/${ep}`,
   },
   {
     id: "vidsrc-anime",
@@ -281,12 +301,15 @@ function withQuery(url, params) {
  *   preferredLang?: string,
  *   preferredLangName?: string,
  *   isAnime?: boolean,
+ *   anilistId?: number,
+ *   malId?: number,
+ *   anilistEpisode?: number,
+ *   useAnilistPlayback?: boolean,
  *   reloadToken?: number|string,
  * }} [opts]
  */
 export const getSourceUrl = (sourceId, type, id, season, ep, opts = {}) => {
   const src = findSource(sourceId);
-  let url = type === "movie" ? src.movieUrl(id) : src.tvUrl(id, season, ep);
   const dubMode = opts.dubMode === "dub" ? "dub" : "sub";
   const originalLang = (opts.originalLang || "en").slice(0, 2).toLowerCase();
   const preferredLang = (opts.preferredLang || "en").slice(0, 2).toLowerCase();
@@ -299,6 +322,58 @@ export const getSourceUrl = (sourceId, type, id, season, ep, opts = {}) => {
     originalLang,
     isAnime,
   });
+
+  if (
+    isAnime &&
+    type === "tv" &&
+    shouldUseAnilistPlayback({
+      isAnime,
+      anilistId: opts.anilistId,
+      anilistEpisode: opts.anilistEpisode ?? ep,
+    }) &&
+    sourceId !== "allmanga"
+  ) {
+    return buildAnimeEmbedUrl(sourceId, {
+      anilistId: opts.anilistId,
+      malId: opts.malId,
+      tmdbId: id,
+      season,
+      episode: ep,
+      anilistEpisode: opts.anilistEpisode ?? ep,
+      dubMode,
+      preferredLang,
+      originalLang,
+      reloadToken: opts.reloadToken,
+    });
+  }
+
+  if (isAnime && type === "tv" && sourceId !== "allmanga") {
+    return buildAnimeTmdbFallbackUrl(sourceId, id, season, ep, {
+      dubMode,
+      preferredLang,
+      originalLang,
+      reloadToken: opts.reloadToken,
+    });
+  }
+
+  let url = type === "movie" ? src.movieUrl(id) : src.tvUrl(id, season, ep);
+
+  if (
+    isAnime &&
+    type === "movie" &&
+    opts.anilistId &&
+    (sourceId === "vidsrc" || sourceId === "vidsrc-anime")
+  ) {
+    const dubFlag = dubMode === "dub" ? "1" : "0";
+    url = withQuery(`https://vidsrc.icu/embed/anime/${opts.anilistId}/1/${dubFlag}`, {
+      ds_lang: dsLang,
+      autoplay: "1",
+    });
+    if (opts.reloadToken != null) {
+      url = withQuery(url, { _rd: String(opts.reloadToken) });
+    }
+    return url;
+  }
 
   if (
     sourceId === "vidsrc" ||
@@ -318,6 +393,7 @@ export const getSourceUrl = (sourceId, type, id, season, ep, opts = {}) => {
     url = withQuery(url, {
       lang: dsLang,
       audioLang: dsLang,
+      autoplay: "1",
     });
   } else if (sourceId === "vidplus") {
     url = withQuery(url, {
@@ -330,6 +406,11 @@ export const getSourceUrl = (sourceId, type, id, season, ep, opts = {}) => {
     url = withQuery(url, {
       lang: dsLang,
       ds_lang: dsLang,
+    });
+  } else if (sourceId === "neon") {
+    url = withQuery(url, {
+      autoplay: "1",
+      autoPlay: "true",
     });
   }
 
@@ -355,6 +436,7 @@ export const NEEDS_INTERCEPT = [
   "2embed-anime",
   "vidplus",
   "vidnest",
+  "neon",
 ];
 
 export const ANIME_DEFAULT_SOURCE = "vidsrc";
@@ -546,8 +628,25 @@ export const isAnimeContent = (item, details) => {
   const lang = meta.original_language;
   const countries = meta.origin_country || [];
   const genreIds = meta.genre_ids || (meta.genres || []).map((g) => g.id);
-  const animated = genreIds.includes(16);
-  return animated && (lang === "ja" || countries.includes("JP"));
+  const genreNames = (meta.genres || []).map((g) =>
+    (g.name || "").toLowerCase(),
+  );
+  const animated =
+    genreIds.includes(16) ||
+    genreNames.some((n) => n.includes("animation") || n === "anime");
+  const japanese =
+    lang === "ja" ||
+    countries.includes("JP") ||
+    countries.includes("JA");
+  const origin = (meta.origin_country || meta.production_countries || [])
+    .map((c) => (typeof c === "string" ? c : c.iso_3166_1))
+    .filter(Boolean);
+  const fromJapan = origin.includes("JP");
+  if (animated && (japanese || fromJapan)) return true;
+  if (meta.media_type === "tv" && animated && genreNames.includes("anime")) {
+    return true;
+  }
+  return false;
 };
 
 // ── TMDB episode groups (persisted cache) ─────────────────────────────────────

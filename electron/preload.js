@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.invoke("get-default-download-path"),
   openExternal: (url) => ipcRenderer.invoke("open-external", url),
   openPath: (filePath) => ipcRenderer.invoke("open-path", filePath),
+  openDownloadLog: (args) => ipcRenderer.invoke("open-download-log", args),
   getInstallPath: () => ipcRenderer.invoke("get-install-path"),
   openPathAtTime: (filePath, seconds, subtitlePaths) =>
     ipcRenderer.invoke("open-path-at-time", {
@@ -87,6 +88,15 @@ contextBridge.exposeInMainWorld("electron", {
   },
   offWebviewLeaveFullscreen: (h) =>
     ipcRenderer.removeListener("webview-leave-fullscreen", h),
+  setPlayerWindowFullscreen: (enabled) =>
+    ipcRenderer.invoke("set-player-window-fullscreen", enabled),
+  onPlayerWindowFullscreenChanged: (cb) => {
+    const h = (_, on) => cb(!!on);
+    ipcRenderer.on("player-window-fullscreen-changed", h);
+    return h;
+  },
+  offPlayerWindowFullscreenChanged: (h) =>
+    ipcRenderer.removeListener("player-window-fullscreen-changed", h),
 
   // Block stats
   onBlockedUpdate: (cb) => {
@@ -97,6 +107,9 @@ contextBridge.exposeInMainWorld("electron", {
   offBlockedUpdate: (h) =>
     ipcRenderer.removeListener("blocked-stats-update", h),
   getBlockStats: () => ipcRenderer.invoke("get-block-stats"),
+  getEncrypticShield: () => ipcRenderer.invoke("get-encryptic-shield"),
+  setEncrypticShield: (enabled) =>
+    ipcRenderer.invoke("set-encryptic-shield", enabled),
 
   // Desktop notifications (triggered from renderer, executed in main)
   showNotification: ({ title, body, silent }) =>
@@ -114,6 +127,8 @@ contextBridge.exposeInMainWorld("electron", {
   clearAppCache: () => ipcRenderer.invoke("clear-app-cache"),
   queryVideoProgress: (webContentsId) =>
     ipcRenderer.invoke("query-video-progress", webContentsId),
+  queryEmbedHealth: (webContentsId) =>
+    ipcRenderer.invoke("query-embed-health", webContentsId),
   clearWatchData: () => ipcRenderer.invoke("clear-watch-data"),
   deleteAllDownloads: () => ipcRenderer.invoke("delete-all-downloads"),
   resetApp: () => ipcRenderer.invoke("reset-app"),

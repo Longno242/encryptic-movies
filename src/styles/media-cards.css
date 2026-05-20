@@ -1,0 +1,622 @@
+/* ── Cinematic media cards (Encryptic gold) ──────────────────────────────── */
+
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(172px, 1fr));
+  gap: 22px;
+  padding: 8px 0 32px;
+}
+
+.cards-grid--search {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 16px;
+  padding: 20px 24px 28px;
+}
+
+/* Base card shell */
+.card.card--cinema {
+  cursor: pointer;
+  position: relative;
+  border: none;
+  background: transparent !important;
+  border-radius: 16px;
+  padding: 0;
+  perspective: 1100px;
+  isolation: isolate;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.card.card--cinema:hover,
+.card.card--cinema:focus-within {
+  transform: none !important;
+  box-shadow: none !important;
+  border-color: transparent !important;
+}
+
+.card.card--cinema .card-ambient {
+  position: absolute;
+  inset: -20%;
+  background: radial-gradient(
+    circle at 50% 80%,
+    rgba(196, 163, 90, 0.22),
+    transparent 65%
+  );
+  opacity: 0;
+  filter: blur(28px);
+  transition: opacity 0.5s ease;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.card.card--cinema:hover .card-ambient,
+.card.card--cinema:focus-within .card-ambient {
+  opacity: 1;
+}
+
+.card.card--cinema .card-inner {
+  position: relative;
+  z-index: 1;
+  border-radius: 16px;
+  overflow: hidden;
+  transform: rotateX(var(--tilt-y, 0deg)) rotateY(var(--tilt-x, 0deg));
+  transition:
+    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.45s ease;
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.card.card--cinema:hover .card-inner,
+.card.card--cinema:focus-within .card-inner {
+  transform: rotateX(var(--tilt-y, 0deg)) rotateY(var(--tilt-x, 0deg))
+    translateY(-14px) scale(1.04);
+  box-shadow:
+    0 32px 64px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(196, 163, 90, 0.45),
+    0 0 48px rgba(196, 163, 90, 0.18);
+}
+
+.card.card--cinema.card--pressing .card-inner {
+  transform: scale(0.97) !important;
+  transition-duration: 0.12s !important;
+}
+
+.card.card--cinema.card--launching .card-inner {
+  animation: cinemaLaunch 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes cinemaLaunch {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 rgba(196, 163, 90, 0);
+  }
+  45% {
+    transform: scale(0.94);
+    box-shadow: 0 0 40px rgba(196, 163, 90, 0.55);
+  }
+  100% {
+    transform: scale(1.03);
+    opacity: 0.8;
+  }
+}
+
+.card.card--cinema .card-poster {
+  aspect-ratio: 2 / 3;
+  position: relative;
+  overflow: hidden;
+  background: #080808;
+}
+
+.card.card--cinema .card-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1), filter 0.4s ease;
+}
+
+.card.card--cinema:hover .card-poster img {
+  transform: scale(1.1);
+  filter: brightness(1.08) saturate(1.12);
+}
+
+.card.card--cinema .card-vignette {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.15) 0%,
+    transparent 28%,
+    transparent 45%,
+    rgba(0, 0, 0, 0.55) 72%,
+    rgba(0, 0, 0, 0.95) 100%
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+.card.card--cinema .card-grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 2;
+}
+
+.card.card--cinema .card-shine {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    115deg,
+    transparent 38%,
+    rgba(255, 255, 255, 0.14) 48%,
+    transparent 58%
+  );
+  transform: translateX(-130%) skewX(-12deg);
+  transition: transform 0.85s cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: 3;
+  pointer-events: none;
+}
+
+.card.card--cinema:hover .card-shine {
+  transform: translateX(130%) skewX(-12deg);
+}
+
+.card.card--cinema .no-poster {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text3);
+  background: linear-gradient(145deg, #141414, #050505);
+  font-size: 11px;
+}
+
+.card.card--cinema .no-poster svg {
+  width: 40px;
+  height: 40px;
+  opacity: 0.35;
+}
+
+/* Top meta */
+.card.card--cinema .card-meta-top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.card.card--cinema .card-meta-top .card-badge {
+  margin-left: auto;
+}
+
+.card.card--cinema .card-score-ring {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+}
+
+.card.card--cinema .card-score-svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.card.card--cinema .card-score-bg {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.12);
+  stroke-width: 2.5;
+}
+
+.card.card--cinema .card-score-fill {
+  fill: none;
+  stroke: var(--gold);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: 94.2;
+  stroke-dashoffset: calc(94.2 - (94.2 * var(--score, 0) / 100));
+  filter: drop-shadow(0 0 6px rgba(196, 163, 90, 0.6));
+}
+
+.card.card--cinema .card-score-num {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 800;
+  color: #fff;
+}
+
+.card.card--cinema .card-badge {
+  padding: 4px 9px;
+  border-radius: 8px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.card.card--cinema .card-badge--hd {
+  background: rgba(0, 0, 0, 0.55);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.card.card--cinema .card-badge--tv {
+  background: rgba(34, 211, 238, 0.25);
+  color: #a5f3fc;
+  border-color: rgba(34, 211, 238, 0.35);
+}
+
+.card.card--cinema .card-badge--anime {
+  background: linear-gradient(135deg, rgba(236, 72, 153, 0.85), rgba(139, 92, 246, 0.85));
+  color: #fff;
+  border: none;
+}
+
+.card.card--cinema .card-badge--unreleased {
+  background: rgba(80, 80, 90, 0.8);
+  color: #ccc;
+}
+
+.card.card--cinema .card-age-badge {
+  position: absolute;
+  bottom: auto;
+  top: auto;
+  left: 10px;
+  bottom: 72px;
+  z-index: 5;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(10px);
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.card.card--cinema .card-age-badge--restricted {
+  border-color: rgba(248, 113, 113, 0.5);
+  color: #fecaca;
+}
+
+/* Bottom info on poster */
+.card.card--cinema .card-bottom-stack {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  padding: 12px 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.card.card--cinema .card-info-overlay {
+  transform: translateY(0);
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s;
+}
+
+.card.card--cinema:hover .card-info-overlay {
+  transform: translateY(-4px);
+}
+
+.card.card--cinema .card-title {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #fff;
+  margin: 0 0 5px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+  letter-spacing: -0.02em;
+}
+
+.card.card--cinema .card-year {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.65);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.card.card--cinema .card-year-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--gold);
+  opacity: 0.8;
+}
+
+/* Watch CTA */
+.card.card--cinema .card-hover-cta {
+  opacity: 0;
+  transform: translateY(12px);
+  transition:
+    opacity 0.3s ease,
+    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.card.card--cinema:hover .card-hover-cta,
+.card.card--cinema:focus-within .card-hover-cta {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.card.card--cinema .card-play-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #e8d5a8 0%, #9a7b3c 100%);
+  color: #0a0a0a;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  box-shadow:
+    0 8px 28px rgba(0, 0, 0, 0.45),
+    0 0 24px rgba(196, 163, 90, 0.35);
+}
+
+.card.card--cinema .card-play-pill svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Progress + watched */
+.card.card--cinema .card-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 6;
+}
+
+.card.card--cinema .card-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #9a7b3c, #e8d5a8);
+  box-shadow: 0 0 14px rgba(196, 163, 90, 0.7);
+  transition: width 0.4s ease;
+}
+
+.card.card--cinema .card-watched-badge {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 7;
+  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.7));
+  animation: watchedPop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes watchedPop {
+  from {
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 0;
+  }
+  to {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+}
+
+.card.card--cinema.ep-watched .card-inner {
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(61, 186, 111, 0.35);
+}
+
+.card.card--cinema.ep-watched:hover .card-inner {
+  box-shadow:
+    0 32px 64px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(61, 186, 111, 0.5),
+    0 0 32px rgba(61, 186, 111, 0.12);
+}
+
+.card.card--cinema.card--unreleased .card-poster img {
+  filter: grayscale(0.5) brightness(0.5);
+}
+
+.card.card--cinema .card-overlay--soon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  z-index: 8;
+}
+
+.card.card--cinema .card-unreleased-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.5);
+}
+
+/* Hide legacy below-poster info for cinema cards */
+.card.card--cinema > .card-info {
+  display: none;
+}
+
+/* Scroll rows */
+.scroll-row .card.card--cinema {
+  flex-shrink: 0;
+  width: 172px;
+}
+
+.browse-row__slot {
+  flex: 0 0 176px;
+}
+
+/* Stagger */
+.card.card--cinema.card--stagger {
+  animation: cardStaggerIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--card-i, 0) * 48ms);
+}
+
+@keyframes cardStaggerIn {
+  from {
+    opacity: 0;
+    transform: translateY(28px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+body.compact-mode .cards-grid {
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 14px;
+}
+
+body.compact-mode .scroll-row .card.card--cinema,
+body.compact-mode .browse-row__slot {
+  width: 140px;
+  flex-basis: 140px;
+}
+
+.search-results--cards {
+  max-height: min(72vh, 580px);
+  overflow-y: auto;
+}
+
+/* Pick mode — tap to add to custom lists */
+.card.card--pick-mode {
+  cursor: pointer;
+}
+
+.card.card--pick-mode .card-inner {
+  transition: box-shadow 0.25s ease, transform 0.25s var(--ease-out-expo);
+}
+
+.card.card--pick-mode:hover .card-inner {
+  transform: translateY(-6px) scale(1.02);
+}
+
+.card.card--picked .card-pick-ring {
+  border-color: var(--gold);
+  background: rgba(196, 163, 90, 0.35);
+  box-shadow: 0 0 24px rgba(196, 163, 90, 0.45);
+}
+
+.card-pick-ring {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 12;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  transition: all 0.2s ease;
+}
+
+.card-pick-icon {
+  font-size: 18px;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1;
+}
+
+.card-quick-actions {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.9);
+  z-index: 9;
+  display: flex;
+  gap: 8px;
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.25s var(--ease-out-expo);
+  pointer-events: none;
+}
+
+.card.card--cinema:hover .card-quick-actions {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  pointer-events: auto;
+}
+
+.card-quick-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(8px);
+  transition: background 0.15s, transform 0.15s;
+}
+
+.card-quick-btn:hover {
+  background: rgba(196, 163, 90, 0.35);
+  transform: scale(1.08);
+}
+
+.card-quick-btn--play {
+  background: rgba(196, 163, 90, 0.25);
+  border-color: rgba(196, 163, 90, 0.5);
+}
+
+.card-hover-cta--pick .card-play-pill {
+  background: rgba(196, 163, 90, 0.2);
+  border-color: rgba(196, 163, 90, 0.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card.card--cinema .card-inner,
+  .card.card--cinema .card-poster img,
+  .card.card--cinema .card-shine,
+  .card.card--cinema.card--stagger {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
+  .card.card--cinema:hover .card-inner {
+    transform: none;
+  }
+}

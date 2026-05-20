@@ -519,27 +519,10 @@ body,
     opacity: 0.45;
 }
 
-.card {
-    border-radius: 10px;
-    background: var(--surface2);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    transition: transform 0.28s ease, box-shadow 0.28s ease, border-color 0.28s;
-}
-
-.card:hover {
-    transform: translateY(-8px) scale(1.02);
-    border-color: rgba(196, 163, 90, 0.45);
-    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55), var(--red-glow);
-}
-
-.card-play {
+/* Card visuals — see media-cards.css (.card--cinema) */
+.card:not(.card--cinema) .card-play {
     background: linear-gradient(180deg, var(--gold), #8a7340);
     color: #0a0a0a;
-}
-
-.card-title {
-    font-weight: 600;
-    letter-spacing: 0.02em;
 }
 
 /* ── Carousel ──────────────────────────────────────────────────────────── */

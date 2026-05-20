@@ -68,10 +68,19 @@ function loadDownloads() {
 function saveDownloads() {
   try {
     const toSave = downloads.filter(
-      (d) => d.status !== "downloading" && d.status !== "error",
+      (d) =>
+        d.status === "completed" ||
+        d.status === "local" ||
+        d.status === "error",
     );
     fs.writeFileSync(downloadsFile(), JSON.stringify(toSave, null, 2));
   } catch {}
+}
+
+function downloadLogsDir() {
+  const dir = path.join(app.getPath("userData"), "download-logs");
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
 }
 
 function cleanupTempFiles(downloadPath) {
@@ -246,7 +255,7 @@ function register(getMainWindow) {
         const saveDir = dirCheck.path;
 
         const id = crypto.randomUUID();
-        const logPath = path.join(os.tmpdir(), `MOV_dl_${id}.log`);
+        const logPath = path.join(downloadLogsDir(), `${id}.log`);
 
         const entry = {
           id,
@@ -766,15 +775,45 @@ function register(getMainWindow) {
     const check = validateMediaPath(filePath, downloads);
     if (!check.ok) return { ok: false, error: check.error };
     try {
-      if (check.isDirectory) {
+      const lower = check.path.toLowerCase();
+      if (lower.endsWith(".log") || lower.endsWith(".txt")) {
+        const err = shell.openPath(check.path);
+        if (err) return { ok: false, error: err };
+      } else if (check.isDirectory) {
         shell.openPath(check.path);
       } else {
         shell.showItemInFolder(check.path);
       }
-    } catch {
-      shell.openPath(check.path);
+    } catch (e) {
+      try {
+        shell.openPath(check.path);
+      } catch (e2) {
+        return { ok: false, error: e2.message || e.message };
+      }
     }
     return { ok: true };
+  });
+
+  ipcMain.handle("open-download-log", async (_, { id, logPath }) => {
+    const entry = downloads.find((d) => d.id === id);
+    const target = logPath || entry?.logPath;
+    if (!target) return { ok: false, error: "no_log" };
+    const check = validateMediaPath(target, downloads);
+    const openResolved = async (p) => {
+      const err = await shell.openPath(p);
+      return err ? { ok: false, error: String(err) } : { ok: true };
+    };
+    if (!check.ok) {
+      try {
+        if (fs.existsSync(target)) {
+          return openResolved(path.resolve(target));
+        }
+      } catch (e) {
+        return { ok: false, error: e.message };
+      }
+      return { ok: false, error: check.error };
+    }
+    return openResolved(check.path);
   });
   ipcMain.handle("get-install-path", () => {
     if (process.env.APPIMAGE) {

@@ -423,19 +423,56 @@ function register(getMainWindow, { writeSecretMigration, getDownloads }) {
   // executeJavaScript on a webview only reaches the top frame.
   // VidSrc / 2embed nest the player inside cross-origin iframes, so we iterate
   // all frames from the main process where same-origin restrictions don't apply.
+  const walkAllFrames = (wc) => {
+    const allFrames = [];
+    const collect = (frame) => {
+      allFrames.push(frame);
+      for (const child of frame.frames || []) collect(child);
+    };
+    collect(wc.mainFrame);
+    return allFrames;
+  };
+
+  ipcMain.handle("query-embed-health", async (_, webContentsId) => {
+    try {
+      const { webContents } = require("electron");
+      const wc = webContents.fromId(webContentsId);
+      if (!wc || wc.isDestroyed()) return null;
+
+      const JS = `
+        (() => {
+          const v = document.querySelector('video');
+          if (!v) return null;
+          return {
+            currentTime: v.currentTime || 0,
+            duration: v.duration || 0,
+            paused: !!v.paused,
+            readyState: v.readyState || 0,
+          };
+        })()
+      `;
+
+      for (const frame of walkAllFrames(wc)) {
+        try {
+          const result = await frame.executeJavaScript(JS);
+          if (result) return result;
+        } catch {
+          /* ignore */
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  });
+
   ipcMain.handle("query-video-progress", async (_, webContentsId) => {
     try {
       const { webContents } = require("electron");
       const wc = webContents.fromId(webContentsId);
       if (!wc || wc.isDestroyed()) return null;
 
-      // Recursively collect all frames
-      const allFrames = [];
-      const collect = (frame) => {
-        allFrames.push(frame);
-        for (const child of frame.frames || []) collect(child);
-      };
-      collect(wc.mainFrame);
+      const allFrames = walkAllFrames(wc);
 
       const JS = `
         (() => {

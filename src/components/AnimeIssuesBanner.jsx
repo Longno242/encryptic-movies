@@ -13,23 +13,25 @@ export default function AnimeIssuesBanner({ variant = "default", className = "" 
       </span>
       <div className="anime-issues-banner__body">
         <div className="anime-issues-banner__title">
-          Ongoing issues with anime movies &amp; series
+          Anime playback — try different servers
         </div>
         <p className="anime-issues-banner__text">
-          Some anime titles may play normally; others may fail to load or buffer.
-          Project Encryptic is actively working on a fix.
+          Anime uses the same TMDB servers as movies (Neon, VidSrc, 2Embed). Some
+          episodes may still fail depending on the host. Project Encryptic is
+          improving reliability.
         </p>
         {variant === "player" ? (
           <p className="anime-issues-banner__hint">
-            If playback fails, click the{" "}
-            <strong className="anime-issues-banner__cta">Source</strong> button
-            on the player (bottom-left) and try a different server.
+            No subtitles? Set <strong className="anime-issues-banner__cta">Player language</strong>{" "}
+            in Settings (English), keep <strong className="anime-issues-banner__cta">SUB</strong> on,
+            and try <strong className="anime-issues-banner__cta">VidSrc</strong> or{" "}
+            <strong className="anime-issues-banner__cta">2Embed</strong> — hosts vary by show.
           </p>
         ) : (
           <p className="anime-issues-banner__hint">
-            When watching, use the{" "}
-            <strong className="anime-issues-banner__cta">Source</strong> button
-            on the player to switch servers if a title does not load.
+            If an episode won&apos;t play, open the player and use{" "}
+            <strong className="anime-issues-banner__cta">Source</strong> to try
+            Neon, VidSrc, or 2Embed.
           </p>
         )}
       </div>

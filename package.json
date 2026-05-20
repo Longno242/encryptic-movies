@@ -1,6 +1,6 @@
 {
   "name": "encryptic-movies",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Encryptic Movies — desktop movies, TV, and anime",
   "author": {
     "name": "Joe",
@@ -12,6 +12,7 @@
   "scripts": {
     "dev": "vite build --watch",
     "start": "vite build && electron .",
+    "start:test-updates": "cross-env UPDATE_TEST_MODE=1 vite build && cross-env UPDATE_TEST_MODE=1 electron .",
     "restart": "powershell -Command \"Get-Process electron -ErrorAction SilentlyContinue | Stop-Process -Force; exit 0\" && vite build && electron .",
     "postinstall": "electron-builder install-app-deps",
     "dist": "cross-env ELECTRON_DIST=1 vite build && npm run dist:linux && npm run dist:win && npm run dist:mac",

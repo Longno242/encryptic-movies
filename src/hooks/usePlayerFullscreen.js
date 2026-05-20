@@ -41,6 +41,16 @@ export function usePlayerFullscreen(playing, playerSource, webviewRef) {
     setWindowFullscreen(false);
   }, [exitNativeInWebview, applyDomFullscreen, setWindowFullscreen]);
 
+  const requestAppFullscreen = useCallback(() => {
+    setPlayerFullscreen((on) => {
+      if (on) return true;
+      exitNativeInWebview();
+      applyDomFullscreen(true);
+      setWindowFullscreen(true);
+      return true;
+    });
+  }, [exitNativeInWebview, applyDomFullscreen, setWindowFullscreen]);
+
   const toggleFullscreen = useCallback(() => {
     setPlayerFullscreen((on) => {
       const next = !on;
@@ -84,16 +94,45 @@ export function usePlayerFullscreen(playing, playerSource, webviewRef) {
     };
   }, [applyDomFullscreen, exitNativeInWebview]);
 
-  /** Keep embed inside the layout when the host page requests native fullscreen. */
+  /** Embed exited native fullscreen — do not tear down Encryptic in-app fullscreen. */
   useEffect(() => {
     if (!playing) return;
     const leaveH = window.electron?.onWebviewLeaveFullscreen?.(() => {
-      exitFullscreen();
+      exitNativeInWebview();
     });
     return () => {
       if (leaveH) window.electron?.offWebviewLeaveFullscreen?.(leaveH);
     };
-  }, [playing, exitFullscreen]);
+  }, [playing, exitNativeInWebview]);
+
+  /** Some hosts repeatedly request native fullscreen while we are in app fullscreen. */
+  useEffect(() => {
+    if (!playing || !playerFullscreen) return;
+    exitNativeInWebview();
+    const id = window.setInterval(() => exitNativeInWebview(), 2500);
+    return () => clearInterval(id);
+  }, [playing, playerFullscreen, exitNativeInWebview]);
+
+  /** Embed fullscreen button / API → Encryptic app fullscreen. */
+  useEffect(() => {
+    if (!playing) return;
+    const wv = webviewRefStable.current?.current;
+
+    const onRequest = () => requestAppFullscreen();
+
+    const mainH = window.electron?.onWebviewRequestAppFullscreen?.(onRequest);
+
+    const onIpc = (e) => {
+      if (e?.channel === "encryptic-app-fullscreen") onRequest();
+    };
+
+    if (wv) wv.addEventListener("ipc-message", onIpc);
+
+    return () => {
+      if (mainH) window.electron?.offWebviewRequestAppFullscreen?.(mainH);
+      if (wv) wv.removeEventListener("ipc-message", onIpc);
+    };
+  }, [playing, requestAppFullscreen]);
 
   useEffect(
     () => () => {
@@ -103,5 +142,11 @@ export function usePlayerFullscreen(playing, playerSource, webviewRef) {
     [setWindowFullscreen],
   );
 
-  return { playerFullscreen, toggleFullscreen, exitFullscreen };
+  return {
+    playerFullscreen,
+    toggleFullscreen,
+    enterFullscreen,
+    exitFullscreen,
+    requestAppFullscreen,
+  };
 }

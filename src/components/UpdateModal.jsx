@@ -419,8 +419,9 @@ export default function UpdateModal({
   updateInfo,
   activeDownloads = 0,
   onClose,
+  onInstalled,
 }) {
-  const { latest, current, url, changelog, assets } = updateInfo;
+  const { latest, current, url, changelog, assets, isTest } = updateInfo;
 
   const [phase, setPhase] = useState("idle"); // idle | downloading | installing | done | error
   const [format, setFormat] = useState(null); // "appimage" | "deb" | "exe" | "dmg" | "dmg_arm64" | null
@@ -469,8 +470,9 @@ export default function UpdateModal({
       });
       if (cancelRef.current) return;
       if (!result.ok) throw new Error(result.error || "Update failed");
+      onInstalled?.();
       setPhase("installing");
-      setProgressLabel("Launching installer…");
+      setProgressLabel("Downloading complete — restarting app…");
     } catch (e) {
       if (cancelRef.current) return;
       setPhase("error");
@@ -561,9 +563,28 @@ export default function UpdateModal({
                     letterSpacing: 1,
                   }}
                 >
-                  UPDATE AVAILABLE
+                  {isTest ? "TEST UPDATE" : "UPDATE AVAILABLE"}
                 </span>
               </div>
+              <p
+                style={{
+                  margin: "10px 0 0",
+                  fontSize: 14,
+                  color: "var(--text2)",
+                  lineHeight: 1.5,
+                }}
+              >
+                Would you like to update to{" "}
+                <strong style={{ color: "var(--text)" }}>v{latest}</strong>
+                {current ? (
+                  <>
+                    {" "}
+                    (you have v{current})?
+                  </>
+                ) : (
+                  "?"
+                )}
+              </p>
               <div
                 style={{
                   fontSize: 13,
@@ -572,6 +593,7 @@ export default function UpdateModal({
                   alignItems: "center",
                   gap: 8,
                   flexWrap: "wrap",
+                  marginTop: 8,
                 }}
               >
                 {current && (
@@ -836,7 +858,7 @@ export default function UpdateModal({
                     cursor: canInstall ? "pointer" : "not-allowed",
                   }}
                 >
-                  Install Update
+                  Yes, update
                 </button>
               </>
             )}

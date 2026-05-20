@@ -397,7 +397,40 @@ function register(getMainWindow, { writeSecretMigration, getDownloads }) {
         }
         if (!launched) shell.openPath(destPath);
       } else if (format === "exe") {
-        spawn(destPath, [], { detached: true, stdio: "ignore" }).unref();
+        const targetExe = process.execPath;
+        if (app.isPackaged && process.platform === "win32") {
+          const scriptPath = path.join(
+            os.tmpdir(),
+            `encryptic-update-${Date.now()}.ps1`,
+          );
+          const ps = [
+            "$ErrorActionPreference = 'SilentlyContinue'",
+            `Wait-Process -Id ${process.pid} -ErrorAction SilentlyContinue`,
+            "Start-Sleep -Seconds 2",
+            `$target = '${targetExe.replace(/'/g, "''")}'`,
+            `$new = '${destPath.replace(/'/g, "''")}'`,
+            "if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Force }",
+            "Move-Item -LiteralPath $new -Destination $target -Force",
+            "Start-Process -FilePath $target",
+          ].join("\n");
+          fs.writeFileSync(scriptPath, ps, "utf8");
+          spawn(
+            "powershell.exe",
+            [
+              "-NoProfile",
+              "-ExecutionPolicy",
+              "Bypass",
+              "-WindowStyle",
+              "Hidden",
+              "-File",
+              scriptPath,
+            ],
+            { detached: true, stdio: "ignore", windowsHide: true },
+          ).unref();
+        } else {
+          spawn(destPath, [], { detached: true, stdio: "ignore" }).unref();
+        }
+        writeSecretMigration();
         app.exit(0);
       } else if (format === "dmg" || format === "dmg_arm64") {
         // Mount the DMG and open it
@@ -441,26 +474,57 @@ function register(getMainWindow, { writeSecretMigration, getDownloads }) {
 
       const JS = `
         (() => {
+          const text = (document.body && document.body.innerText || '')
+            .toLowerCase()
+            .slice(0, 6000);
+          const unavailable = /not available|unavailable|no sources|not found|dead link|could not find|embed.*disabled|video unavailable/.test(
+            text,
+          );
           const v = document.querySelector('video');
-          if (!v) return null;
+          if (!v) return { hasVideo: false, stuck: true, unavailable };
+          const dur = v.duration;
+          const t = v.currentTime || 0;
+          const badDur = !dur || !Number.isFinite(dur) || dur <= 0;
           return {
-            currentTime: v.currentTime || 0,
-            duration: v.duration || 0,
+            hasVideo: true,
+            unavailable,
+            currentTime: t,
+            duration: badDur ? 0 : dur,
             paused: !!v.paused,
             readyState: v.readyState || 0,
+            stuck: badDur && t < 0.25 && (v.readyState || 0) < 3,
           };
         })()
       `;
 
+      let sawVideo = false;
+      let best = null;
       for (const frame of walkAllFrames(wc)) {
         try {
           const result = await frame.executeJavaScript(JS);
-          if (result) return result;
+          if (!result) continue;
+          if (result.hasVideo) {
+            sawVideo = true;
+            if (
+              !result.unavailable &&
+              !result.stuck &&
+              result.duration > 0 &&
+              result.currentTime > 0.25
+            ) {
+              return result;
+            }
+            if (!best || (result.readyState || 0) > (best.readyState || 0)) {
+              best = result;
+            }
+          } else if (!best) {
+            best = result;
+          }
         } catch {
           /* ignore */
         }
       }
-      return null;
+      if (best) return best;
+      return sawVideo ? null : { hasVideo: false, stuck: true };
     } catch {
       return null;
     }

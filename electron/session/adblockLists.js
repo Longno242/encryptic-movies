@@ -167,6 +167,8 @@ const MEDIA_HOST_ALLOW = [
   "videasy",
   "vidplus",
   "vidnest",
+  "ezvid",
+  "ezvidapi",
   "multiembed",
   "cloudfront",
   "akamaized",

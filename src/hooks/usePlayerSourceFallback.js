@@ -10,15 +10,18 @@ export function usePlayerSourceFallback({
   setWebviewLoading,
   getNextSource,
   primaryFailoverSource = null,
+  failThreshold = 2,
   onRemember,
   onFailover,
   onSourceSuccess,
 }) {
   const failStreak = useRef(0);
   const slowFailTimer = useRef(null);
+  const stuckHandled = useRef(false);
 
   const onLoadSuccess = useCallback(() => {
     failStreak.current = 0;
+    stuckHandled.current = false;
     if (slowFailTimer.current) {
       clearTimeout(slowFailTimer.current);
       slowFailTimer.current = null;
@@ -55,18 +58,20 @@ export function usePlayerSourceFallback({
       const code = event?.errorCode ?? event?.detail?.errorCode;
       if (code === -3) return;
       failStreak.current += 1;
-      if (failStreak.current >= 2) tryFailover();
+      if (failStreak.current >= failThreshold) tryFailover();
     },
     [enabled, tryFailover],
   );
 
   const onLoadStuck = useCallback(() => {
-    if (!enabled) return;
+    if (!enabled || stuckHandled.current) return;
+    stuckHandled.current = true;
     tryFailover();
   }, [enabled, tryFailover]);
 
   const resetFallback = useCallback(() => {
     failStreak.current = 0;
+    stuckHandled.current = false;
     if (slowFailTimer.current) {
       clearTimeout(slowFailTimer.current);
       slowFailTimer.current = null;

@@ -18,7 +18,7 @@ import {
   sourceSupportsProgress,
   sourceProgressViaFrames,
   sourceIsAsync,
-  fetchAnilistData,
+  fetchAnilistForAnime,
   cleanAnilistDescription,
   isAnimeContent,
   ANIME_DEFAULT_SOURCE,
@@ -44,6 +44,7 @@ import SourceStatusBanner from "../components/SourceStatusBanner";
 import AnimeIssuesBanner from "../components/AnimeIssuesBanner";
 import TitleNotes from "../components/TitleNotes";
 import { applyDubInWebview } from "../utils/playerDub";
+import { applySubtitlesInWebview } from "../utils/playerSubtitles";
 import { nudgeEmbedPlayback } from "../utils/playerAutoplay";
 import { getPlaybackLang, embedLangLabel } from "../utils/playbackLang";
 import {
@@ -263,6 +264,9 @@ export default function MoviePage({
         !sourceIsAsync(playerSource)
       ) {
         void applyDubInWebview(wv, dubMode, embedUrlOpts.preferredLangName);
+        if (dubMode === "sub") {
+          void applySubtitlesInWebview(wv, embedUrlOpts.preferredLangName, true);
+        }
       }
     },
     onLoadFail: (e) => fallbackHandlers.current.onFail?.(e),
@@ -275,7 +279,8 @@ export default function MoviePage({
       playerSource,
       setPlayerSource,
       setWebviewLoading,
-      primaryFailoverSource: FAILOVER_SOURCE,
+      primaryFailoverSource: isAnime ? "neon" : FAILOVER_SOURCE,
+      failThreshold: isAnime ? 1 : 2,
       getNextSource: (id) =>
         isAnime ? getNextAnimeSource(id) : getNextMovieSource(id),
       onRemember: (id) => {
@@ -439,26 +444,27 @@ export default function MoviePage({
   useEffect(() => {
     let mounted = true;
     if (isAnime) {
-      fetchAnilistData(item.title || item.name, "ANIME", item.id).then(
-        (data) => {
-          if (mounted && data) setAnilistData(data);
-        },
-      );
+      fetchAnilistForAnime(item, details, apiKey).then((data) => {
+        if (mounted && data) setAnilistData(data);
+      });
       const allowed = new Set(getSourcesForMedia(true).map((s) => s.id));
       const remembered = getRememberedAnimeSource(item.id);
       const saved = storage.get("playerSource");
       const titleRemembered = getTitleSource("movie", item.id);
-      const pick =
+      const rawPick =
         (remembered && allowed.has(remembered) && remembered) ||
         (titleRemembered && allowed.has(titleRemembered) && titleRemembered) ||
         (saved && allowed.has(saved) && saved) ||
         ANIME_DEFAULT_SOURCE;
+      const pick = rawPick === "allmanga" ? ANIME_DEFAULT_SOURCE : rawPick;
       if (!allowed.has(playerSource)) {
         setPlayerSource(pick);
       } else if (remembered && allowed.has(remembered)) {
-        setPlayerSource(remembered);
+        setPlayerSource(remembered === "allmanga" ? pick : remembered);
       } else if (titleRemembered && allowed.has(titleRemembered)) {
-        setPlayerSource(titleRemembered);
+        setPlayerSource(
+          titleRemembered === "allmanga" ? pick : titleRemembered,
+        );
       }
     } else {
       const allowed = new Set(getSourcesForMedia(false).map((s) => s.id));
@@ -481,7 +487,7 @@ export default function MoviePage({
     return () => {
       mounted = false;
     };
-  }, [item.id, isAnime]);
+  }, [item.id, isAnime, apiKey, details]);
 
   // Resolve AllManga movie URL via main-process IPC
   useEffect(() => {
@@ -569,7 +575,7 @@ export default function MoviePage({
     if (!window.electron) return;
     const handler = window.electron.onSubtitleFound(({ url, lang }) => {
       // Only keep VTT, deduplicate per language (latest wins)
-      if (!url || !url.toLowerCase().includes(".vtt")) return;
+      if (!url || !/\.(vtt|srt)(\?|$)/i.test(url)) return;
       setInterceptedSubs((prev) => {
         const filtered = prev.filter((s) => s.lang !== lang);
         return [...filtered, { url, lang: lang || "unknown" }];
@@ -1047,16 +1053,33 @@ export default function MoviePage({
                   <span className="player-load-chip__text">
                     {resolvingUrl
                       ? "Looking up on AllManga…"
-                      : `Buffering ${PLAYER_SOURCES.find((s) => s.id === playerSource)?.label ?? "source"}…`}
+                      : isAnime && !anilistData?.id
+                        ? "Matching anime on AniList…"
+                        : `Buffering ${PLAYER_SOURCES.find((s) => s.id === playerSource)?.label ?? "source"}…`}
                   </span>
                   {loadSlow && (
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={retryLoad}
-                    >
-                      Slow? Tap to retry
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => {
+                          const rect = sourceRef.current?.getBoundingClientRect();
+                          if (rect) {
+                            setMenuPos({ top: rect.bottom + 6, left: rect.left });
+                          }
+                          setShowSourceMenu(true);
+                        }}
+                      >
+                        Switch server
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        onClick={retryLoad}
+                      >
+                        Retry
+                      </button>
+                    </>
                   )}
                 </div>
               </>
@@ -1135,7 +1158,7 @@ export default function MoviePage({
               </div>
             )}
             <webview
-              key={`${item.id}-${playerSource}-${playerReloadNonce}`}
+              key={`${item.id}-${playerSource}-${anilistData?.id ?? 0}-${playerReloadNonce}`}
               ref={webviewRef}
               src={
                 pipOpen

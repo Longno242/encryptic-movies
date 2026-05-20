@@ -23,7 +23,7 @@ import {
   sourceSupportsProgress,
   sourceProgressViaFrames,
   sourceIsAsync,
-  fetchAnilistData,
+  fetchAnilistForAnime,
   fetchEpisodeGroup,
   buildAnilistSeasons,
   cleanAnilistDescription,
@@ -51,9 +51,12 @@ import TitleNotes from "../components/TitleNotes";
 import TVCastSection from "../components/TVCastSection";
 import {
   buildAnimePlaybackOpts,
+  buildAnilistEpisodeList,
   getRememberedAnimeSource,
+  resolveAnimePlayerEpisode,
 } from "../utils/animePlayback";
 import { applyDubInWebview } from "../utils/playerDub";
+import { applySubtitlesInWebview } from "../utils/playerSubtitles";
 import { nudgeEmbedPlayback } from "../utils/playerAutoplay";
 import { getPlaybackLang, embedLangLabel } from "../utils/playbackLang";
 import {
@@ -420,6 +423,7 @@ export default function TVPage({
   const [playerSource, setPlayerSource] = useState(
     () => storage.get("playerSource") || NON_ANIME_DEFAULT_SOURCE,
   );
+  const [animePlaybackMode, setAnimePlaybackMode] = useState("tmdb");
   const [showSourceMenu, setShowSourceMenu] = useState(false);
   // Derived from playerSource, computed once per render instead of 5-6× inline
   const isAsync = useMemo(() => sourceIsAsync(playerSource), [playerSource]);
@@ -595,9 +599,8 @@ export default function TVPage({
     setSelectedEp(null);
     setPlaying(false);
     setSeasonData(null); // clear stale episodes immediately
-    // AniList virtual seasons on a single-season show: always fetch TMDB S1.
     const tmdbSeasonToFetch =
-      isAnime && anilistSeasons?.length > 0 && tmdbSeasons.length <= 1
+      isAnime && anilistSeasons?.length > 1 && tmdbSeasons.length <= 1
         ? 1
         : selectedSeason;
     let mounted = true;
@@ -647,7 +650,7 @@ export default function TVPage({
     setAnilistSeasons(null);
     if (isAnime) {
       setAnilistLoading(true);
-      fetchAnilistData(item.name || item.title, "ANIME", item.id)
+      fetchAnilistForAnime(item, details, apiKey)
         .then((data) => {
           if (!mounted) return;
           if (data) {
@@ -664,17 +667,20 @@ export default function TVPage({
       const remembered = getRememberedAnimeSource(item.id);
       const titleRemembered = getTitleSource("tv", item.id);
       const saved = storage.get("playerSource");
-      const pick =
+      const rawPick =
         (remembered && allowed.has(remembered) && remembered) ||
         (titleRemembered && allowed.has(titleRemembered) && titleRemembered) ||
         (saved && allowed.has(saved) && saved) ||
         ANIME_DEFAULT_SOURCE;
+      const pick = rawPick === "allmanga" ? ANIME_DEFAULT_SOURCE : rawPick;
       if (!allowed.has(playerSource)) {
         setPlayerSource(pick);
       } else if (remembered && allowed.has(remembered)) {
-        setPlayerSource(remembered);
+        setPlayerSource(remembered === "allmanga" ? pick : remembered);
       } else if (titleRemembered && allowed.has(titleRemembered)) {
-        setPlayerSource(titleRemembered);
+        setPlayerSource(
+          titleRemembered === "allmanga" ? pick : titleRemembered,
+        );
       }
     } else {
       setAnilistLoading(false);
@@ -690,7 +696,7 @@ export default function TVPage({
     return () => {
       mounted = false;
     };
-  }, [item.id, isAnime]);
+  }, [item.id, isAnime, apiKey, details]);
 
   // Resolve allmanga episode URL via main-process IPC (GraphQL, no CORS)
   useEffect(() => {
@@ -779,7 +785,7 @@ export default function TVPage({
   useEffect(() => {
     if (!window.electron) return;
     const handler = window.electron.onSubtitleFound(({ url, lang }) => {
-      if (!url || !url.toLowerCase().includes(".vtt")) return;
+      if (!url || !/\.(vtt|srt)(\?|$)/i.test(url)) return;
       setInterceptedSubs((prev) => {
         const filtered = prev.filter((s) => s.lang !== lang);
         return [...filtered, { url, lang: lang || "unknown" }];
@@ -791,8 +797,8 @@ export default function TVPage({
   const d = details || item;
   const playbackLang = getPlaybackLang();
   const embedUrlOpts = useMemo(
-    () =>
-      buildAnimePlaybackOpts({
+    () => ({
+      ...buildAnimePlaybackOpts({
         isAnime,
         anilistData,
         anilistSeasons,
@@ -803,6 +809,8 @@ export default function TVPage({
         originalLang: d.original_language || "ja",
         reloadToken: dubReloadNonce,
       }),
+      useAnilistPlayback: isAnime && animePlaybackMode === "anilist",
+    }),
     [
       isAnime,
       anilistData,
@@ -813,6 +821,7 @@ export default function TVPage({
       playbackLang,
       d.original_language,
       dubReloadNonce,
+      animePlaybackMode,
     ],
   );
 
@@ -855,6 +864,9 @@ export default function TVPage({
         !sourceIsAsync(playerSource)
       ) {
         void applyDubInWebview(wv, dubMode, embedUrlOpts.preferredLangName);
+        if (dubMode === "sub") {
+          void applySubtitlesInWebview(wv, embedUrlOpts.preferredLangName, true);
+        }
       }
     },
     onLoadFail: (e) => fallbackHandlers.current.onFail?.(e),
@@ -867,14 +879,20 @@ export default function TVPage({
       playerSource,
       setPlayerSource,
       setWebviewLoading,
-      primaryFailoverSource: FAILOVER_SOURCE,
+      primaryFailoverSource: isAnime ? "vidsrc" : FAILOVER_SOURCE,
+      failThreshold: isAnime ? 1 : 2,
       getNextSource: (id) =>
         isAnime ? getNextAnimeSource(id) : getNextMovieSource(id),
       onRemember: (id) => {
         if (isAnime) rememberAnimeSource(item.id, id);
         else rememberMovieSource(item.id, id);
       },
-      onFailover: reportFailover,
+      onFailover: (from, to) => {
+        if (isAnime) {
+          setAnimePlaybackMode((m) => (m === "tmdb" ? "anilist" : "tmdb"));
+        }
+        reportFailover(from, to);
+      },
       onSourceSuccess: (id) => {
         reportSuccess(id);
         setTitleSource("tv", item.id, id);
@@ -961,35 +979,36 @@ export default function TVPage({
       }));
   }, [episodeGroupData, selectedSeason]);
 
-  // ── Episode slice (AniList virtual seasons only) ───────────────────────────
+  // ── Episode slice (TMDB only — AniList uses buildAnilistEpisodeList) ───────
   const getSeasonEpisodes = useCallback(
-    (rawEpisodes) => {
-      if (!useAnilistSeasons || !rawEpisodes) return rawEpisodes;
-      if (tmdbSeasons.length > 1) return rawEpisodes;
-      let offset = 0;
-      for (const s of anilistSeasons) {
-        if (s.seasonNum < selectedSeason) offset += s.episodes || 0;
-      }
-      const count =
-        anilistSeasons.find((s) => s.seasonNum === selectedSeason)?.episodes ||
-        rawEpisodes.length;
-      return rawEpisodes.slice(offset, offset + count).map((ep, i) => ({
-        ...ep,
-        episode_number: i + 1,
-        _tmdbAbsolute: ep.episode_number,
-      }));
-    },
-    [useAnilistSeasons, tmdbSeasons.length, anilistSeasons, selectedSeason],
+    (rawEpisodes) => rawEpisodes,
+    [],
   );
 
   // ── Player episode mapping
   const playerEp = useMemo(() => {
     if (!selectedEp) return { season: selectedSeason, episode: undefined };
-    // In episode-group mode: use the real TMDB season/episode stored on the ep
+    if (useAnilistSeasons) {
+      return resolveAnimePlayerEpisode({
+        useAnilistSeasons: true,
+        anilistSeasons,
+        selectedSeason,
+        selectedEp,
+        tmdbSeasonCount: tmdbSeasons.length,
+      });
+    }
     const rawSeason = selectedEp._tmdbSeason ?? selectedSeason;
     const rawEpisode = selectedEp._tmdbAbsolute ?? selectedEp.episode_number;
     return applyEpisodeMapping(item.id, rawSeason, rawEpisode, episodeGroupMap);
-  }, [selectedEp, selectedSeason, item.id, episodeGroupMap]);
+  }, [
+    selectedEp,
+    selectedSeason,
+    item.id,
+    episodeGroupMap,
+    useAnilistSeasons,
+    anilistSeasons,
+    tmdbSeasons.length,
+  ]);
 
   useEffect(() => {
     if (!dubReloadNonce || !playing || sourceIsAsync(playerSource)) return;
@@ -1021,15 +1040,30 @@ export default function TVPage({
   );
   const currentSeasonEpisodes = useMemo(() => {
     if (episodeGroupPending) return [];
-    if (anilistLoading) return [];
+    const tmdbEps = seasonData?.episodes || [];
+    if (useAnilistSeasons && anilistSeasons?.length) {
+      const list = buildAnilistEpisodeList(
+        anilistSeasons,
+        selectedSeason,
+        tmdbEps,
+        anilistData?.episodes,
+      );
+      if (list.length) return list;
+    }
+    if (anilistLoading && !tmdbEps.length && isAnime) return [];
     return (
       episodeGroupCurrentEpisodes ||
-      getSeasonEpisodes(seasonData?.episodes) ||
+      getSeasonEpisodes(tmdbEps) ||
       []
     );
   }, [
     episodeGroupPending,
     anilistLoading,
+    isAnime,
+    useAnilistSeasons,
+    anilistSeasons,
+    anilistData?.episodes,
+    selectedSeason,
     episodeGroupCurrentEpisodes,
     getSeasonEpisodes,
     seasonData,
@@ -1244,6 +1278,7 @@ export default function TVPage({
 
   useEffect(() => {
     resetFallback();
+    setAnimePlaybackMode("tmdb");
   }, [item.id, selectedSeason, selectedEp?.episode_number, playerSource, resetFallback]);
 
   // ── AniSkip: fetch timings when episode changes ───────────────────────────
@@ -1862,16 +1897,39 @@ export default function TVPage({
                       <span className="player-load-chip__text">
                         {resolvingUrl
                           ? "Looking up on AllManga…"
-                          : `Buffering ${PLAYER_SOURCES.find((s) => s.id === playerSource)?.label ?? "source"}…`}
+                          : isAnime && anilistLoading
+                            ? "Matching anime on AniList…"
+                            : isAnime && !embedUrlOpts.anilistId
+                              ? "Anime metadata missing — try another source"
+                              : `Buffering ${PLAYER_SOURCES.find((s) => s.id === playerSource)?.label ?? "source"}…`}
                       </span>
                       {loadSlow && (
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          onClick={retryLoad}
-                        >
-                          Slow? Tap to retry
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={() => {
+                              const rect =
+                                sourceRef.current?.getBoundingClientRect();
+                              if (rect) {
+                                setMenuPos({
+                                  top: rect.bottom + 6,
+                                  left: rect.left,
+                                });
+                              }
+                              setShowSourceMenu(true);
+                            }}
+                          >
+                            Switch server
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            onClick={retryLoad}
+                          >
+                            Retry
+                          </button>
+                        </>
                       )}
                     </div>
                   </>
@@ -1950,7 +2008,7 @@ export default function TVPage({
                   </div>
                 )}
                 <webview
-                  key={`${item.id}-${playerSource}-${selectedSeason}-${selectedEp?.episode_number ?? 0}-${dubReloadNonce}`}
+                  key={`${item.id}-${playerSource}-${animePlaybackMode}-${embedUrlOpts.anilistId ?? 0}-${selectedSeason}-${selectedEp?.episode_number ?? 0}-${dubReloadNonce}`}
                   ref={webviewRef}
                   src={
                     pipOpen
@@ -2411,13 +2469,14 @@ export default function TVPage({
                 </span>
               </div>
             )}
-            {loadingSeason && (
+            {(loadingSeason || (isAnime && anilistLoading && !currentSeasonEpisodes.length)) && (
               <div className="loader">
                 <div className="spinner" />
               </div>
             )}
             {!loadingSeason &&
-              (seasonData?.episodes || episodeGroupCurrentEpisodes?.length) && (
+              !(isAnime && anilistLoading && !currentSeasonEpisodes.length) &&
+              currentSeasonEpisodes.length > 0 && (
                 <div className="episodes-grid">
                   {currentSeasonEpisodes.map((ep) => {
                     const pk = `tv_${item.id}_s${selectedSeason}e${ep.episode_number}`;
@@ -2440,6 +2499,21 @@ export default function TVPage({
                     );
                   })}
                 </div>
+              )}
+            {!loadingSeason &&
+              !anilistLoading &&
+              currentSeasonEpisodes.length === 0 &&
+              seasons.length > 0 && (
+                <p
+                  style={{
+                    color: "var(--text3)",
+                    fontSize: 13,
+                    marginTop: 12,
+                  }}
+                >
+                  No episodes listed for this season yet. Try another season tab,
+                  or check back if the show is still airing.
+                </p>
               )}
           </div>
         </>

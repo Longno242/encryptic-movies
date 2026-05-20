@@ -6,6 +6,11 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     base: "./",
+    define: {
+      "import.meta.env.VITE_UPDATE_TEST_MODE": JSON.stringify(
+        process.env.UPDATE_TEST_MODE === "1" ? "true" : "false",
+      ),
+    },
     build: {
       minify: "terser",
       terserOptions: {

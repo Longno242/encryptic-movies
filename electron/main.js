@@ -107,7 +107,10 @@ function createMainWindow() {
   });
 
   mainWindow.on("enter-full-screen", () => notifyPlayerWindowFullscreen(true));
-  mainWindow.on("leave-full-screen", () => notifyPlayerWindowFullscreen(false));
+  mainWindow.on("leave-full-screen", () => {
+    appPlayerFullscreen = false;
+    notifyPlayerWindowFullscreen(false);
+  });
 
   session.defaultSession.webRequest.onHeadersReceived(
     { urls: ["*://image.tmdb.org/*"] },
@@ -152,13 +155,15 @@ function createMainWindow() {
     }
 
     wc.on("enter-html-full-screen", () => {
-      if (isPlayer) {
-        wc.executeJavaScript(EXIT_NATIVE_FULLSCREEN_SCRIPT, true).catch(() => {});
+      if (!isPlayer || !mainWindow || mainWindow.isDestroyed()) return;
+      wc.executeJavaScript(EXIT_NATIVE_FULLSCREEN_SCRIPT, true).catch(() => {});
+      mainWindow.webContents.send("webview-request-app-fullscreen");
+    });
+    wc.on("leave-html-full-screen", () => {
+      if (!appPlayerFullscreen && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("webview-leave-fullscreen");
       }
     });
-    wc.on("leave-html-full-screen", () =>
-      mainWindow.webContents.send("webview-leave-fullscreen"),
-    );
   });
 
   mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
@@ -366,21 +371,24 @@ ipcMain.handle(
 
 let pipWindow = null;
 let playerWindowBoundsBeforeFs = null;
+let appPlayerFullscreen = false;
 
 ipcMain.handle("set-player-window-fullscreen", (_, enabled) => {
   const win = getMainWindow();
   if (!win || win.isDestroyed()) return { ok: false };
   try {
+    appPlayerFullscreen = !!enabled;
     if (enabled) {
       if (!playerWindowBoundsBeforeFs) {
         playerWindowBoundsBeforeFs = win.getBounds();
       }
+      if (win.isMaximized()) win.unmaximize();
       const display = screen.getDisplayMatching(win.getBounds());
+      win.setFullScreen(true);
       if (process.platform === "win32") {
-        // Frameless Windows windows: fill the monitor (setFullScreen alone is unreliable).
+        // Frameless Windows: ensure the window covers the full display.
         win.setBounds(display.bounds);
       }
-      win.setFullScreen(true);
     } else {
       win.setFullScreen(false);
       if (playerWindowBoundsBeforeFs) {
@@ -390,6 +398,7 @@ ipcMain.handle("set-player-window-fullscreen", (_, enabled) => {
     }
     return { ok: true, fullscreen: win.isFullScreen() };
   } catch (err) {
+    appPlayerFullscreen = false;
     return { ok: false, error: String(err) };
   }
 });

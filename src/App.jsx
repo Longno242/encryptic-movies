@@ -32,7 +32,14 @@ const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const DownloadsPage = lazy(() => import("./pages/DownloadsPage"));
 const PersonPage = lazy(() => import("./pages/PersonPage"));
 const IssuesPage = lazy(() => import("./pages/IssuesPage"));
-import { checkForUpdates } from "./utils/updates";
+import {
+  checkForUpdates,
+  dismissUpdateVersion,
+  isAutoCheckUpdatesEnabled,
+  isUpdateTestMode,
+  shouldPromptUpdateOnStartup,
+} from "./utils/updates";
+import { applySidebarCollapsedFromStorage } from "./utils/sidebarLayout";
 import {
   isDiscordRpcEnabled,
   syncDiscordRpcEnabled,
@@ -121,16 +128,24 @@ export default function App() {
     window.electron?.setEncrypticShield?.(enabled);
   }, []);
 
-  // ── Startup update check ─────────────────────────────────────────────────
+  // ── Startup update check (GitHub releases; prompt when newer) ─────────────
   useEffect(() => {
-    if (!storage.get("autoCheckUpdates")) return;
+    if (!isAutoCheckUpdatesEnabled() && !isUpdateTestMode()) return;
     checkForUpdates()
       .then((r) => {
-        if (r.hasUpdate) setUpdateBanner(r);
+        if (!r.hasUpdate) return;
+        setUpdateBanner(r);
+        if (shouldPromptUpdateOnStartup(r)) setShowUpdateModal(true);
       })
-      .catch(() => {}); // silently ignore network errors on startup
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const dismissUpdateOffer = useCallback(() => {
+    if (updateBanner?.latest) dismissUpdateVersion(updateBanner.latest);
+    setUpdateBanner(null);
+    setShowUpdateModal(false);
+  }, [updateBanner?.latest]);
 
   // ── Startup: new-episode notification check ──────────────────────────────
   // Only runs once the API key has been loaded from secure storage (i.e. the
@@ -592,6 +607,7 @@ export default function App() {
     // Reduce animations
     const noAnim = !!storage.get(STORAGE_KEYS.REDUCE_ANIMATIONS);
     document.body.classList.toggle("no-anim", noAnim);
+    applySidebarCollapsedFromStorage();
   }, []);
   useEffect(() => {
     const goOnline = () => setOffline(false);
@@ -1176,54 +1192,23 @@ export default function App() {
           />
         )}
         {updateBanner && (
-          <div
-            className="update-banner-top"
-            style={{
-              position: "fixed",
-              top: hasCustomTitlebar ? 32 : 0,
-              left: 0,
-              right: 0,
-              zIndex: 9999,
-              background: "rgba(99,102,241,0.92)",
-              backdropFilter: "blur(8px)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 16,
-              padding: "10px 24px",
-              boxShadow: "0 2px 16px rgba(0,0,0,0.4)",
-              fontSize: 14,
-              fontWeight: 500,
-              color: "#fff",
-            }}
-          >
-            <span>🎉 Encryptic Movies v{updateBanner.latest} is available!</span>
+          <div className="update-banner-top">
+            <span>
+              {updateBanner.isTest
+                ? "🧪 Test: update available"
+                : `🎉 Encryptic Movies v${updateBanner.latest} is available!`}
+            </span>
             <button
+              type="button"
+              className="update-banner-top__cta"
               onClick={() => setShowUpdateModal(true)}
-              style={{
-                color: "#fff",
-                fontWeight: 700,
-                background: "rgba(255,255,255,0.18)",
-                border: "1px solid rgba(255,255,255,0.4)",
-                borderRadius: 6,
-                padding: "4px 12px",
-                fontSize: 13,
-                cursor: "pointer",
-              }}
             >
-              Install Update
+              Update now
             </button>
             <button
-              onClick={() => setUpdateBanner(null)}
-              style={{
-                background: "transparent",
-                border: "none",
-                color: "rgba(255,255,255,0.7)",
-                cursor: "pointer",
-                fontSize: 18,
-                lineHeight: 1,
-                padding: "0 4px",
-              }}
+              type="button"
+              className="update-banner-top__dismiss"
+              onClick={dismissUpdateOffer}
               aria-label="Dismiss"
             >
               ×
@@ -1234,7 +1219,11 @@ export default function App() {
           <UpdateModal
             updateInfo={updateBanner}
             activeDownloads={activeDownloadCount}
-            onClose={() => setShowUpdateModal(false)}
+            onClose={() => {
+              dismissUpdateVersion(updateBanner.latest);
+              setShowUpdateModal(false);
+            }}
+            onInstalled={() => dismissUpdateVersion(updateBanner.latest)}
           />
         )}
         {toast && <div className="toast">{toast}</div>}

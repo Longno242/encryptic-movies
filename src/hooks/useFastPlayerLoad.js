@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { nudgeEmbedPlayback, restoreEmbedAudio } from "../utils/playerAutoplay";
 
-const SLOW_HINT_MS = 4000;
-const STALL_FAILOVER_MS = 5000;
-const HEALTH_POLL_MS = 2000;
+const SLOW_HINT_MS = 5000;
+const STALL_FAILOVER_MS = 6000;
+const NUDGE_INTERVAL_MS = 3000;
+const HEALTH_POLL_MS = 1500;
 
 function isBlankPlayerUrl(url) {
   if (!url) return true;
@@ -14,14 +15,32 @@ function isBlankPlayerUrl(url) {
 function isPlaybackActive(health) {
   if (!health) return false;
   if (health.currentTime > 0.25) return true;
-  if (!health.paused && health.readyState >= 2) return true;
-  if (health.readyState >= 3 && health.duration > 0 && !health.paused)
+  if (
+    health.duration > 0 &&
+    Number.isFinite(health.duration) &&
+    !health.paused &&
+    health.readyState >= 2
+  ) {
     return true;
+  }
   return false;
 }
 
+function isEmbedStalled(health, elapsedMs) {
+  if (health?.unavailable) return true;
+  if (isPlaybackActive(health)) return false;
+  if (!health) return elapsedMs >= STALL_FAILOVER_MS;
+  if (health.hasVideo === false) return elapsedMs >= 8000;
+  if (health.stuck) return elapsedMs >= 7000;
+  const d = health.duration;
+  if ((!d || d <= 0) && (health.currentTime || 0) < 0.25) {
+    return elapsedMs >= STALL_FAILOVER_MS;
+  }
+  return elapsedMs >= STALL_FAILOVER_MS + 5000;
+}
+
 /**
- * Player load UX: wait for real playback, nudge embeds, auto-reload / failover when stuck.
+ * Player load UX: keep overlay until video plays; failover when embed stuck at 0:00.
  */
 export function useFastPlayerLoad({
   playing,
@@ -38,10 +57,12 @@ export function useFastPlayerLoad({
   const [loadSlow, setLoadSlow] = useState(false);
   const loadGenRef = useRef(0);
   const shellReadyRef = useRef(false);
+  const shellAtRef = useRef(0);
 
   const bumpLoading = useCallback(() => {
     loadGenRef.current += 1;
     shellReadyRef.current = false;
+    shellAtRef.current = 0;
     setLoadSlow(false);
     setWebviewLoading(true);
   }, []);
@@ -66,6 +87,7 @@ export function useFastPlayerLoad({
       setWebviewLoading(false);
       setLoadSlow(false);
       shellReadyRef.current = false;
+      shellAtRef.current = 0;
     }
   }, [playing, playerSource, itemKey, episodeKey, bumpLoading]);
 
@@ -124,14 +146,23 @@ export function useFastPlayerLoad({
     const gen = loadGenRef.current;
     let cancelled = false;
     let stallTimer = null;
+    let nudgeTimer = null;
     let healthPoll = null;
 
     const tryMarkPlaying = async () => {
-      if (cancelled || gen !== loadGenRef.current || shellReadyRef.current) return;
+      if (cancelled || gen !== loadGenRef.current || shellReadyRef.current) return false;
       const health = await checkEmbedHealth();
       if (isPlaybackActive(health)) {
         markReady();
         return true;
+      }
+      if (health?.unavailable && shellAtRef.current > 0) {
+        onLoadStuck?.();
+        return false;
+      }
+      if (shellAtRef.current > 0 && isEmbedStalled(health, Date.now() - shellAtRef.current)) {
+        onLoadStuck?.();
+        return false;
       }
       return false;
     };
@@ -149,20 +180,25 @@ export function useFastPlayerLoad({
       if (isBlankPlayerUrl(url)) return;
       if (cancelled || gen !== loadGenRef.current) return;
       shellHandled = true;
+      shellAtRef.current = Date.now();
 
       void nudgeEmbedPlayback(wv);
       if (await tryMarkPlaying()) return;
 
-      stallTimer = window.setTimeout(async () => {
-        if (cancelled || gen !== loadGenRef.current || shellReadyRef.current) return;
-        void nudgeEmbedPlayback(wv);
-        if (await tryMarkPlaying()) return;
-        onLoadStuck?.();
+      stallTimer = window.setTimeout(() => {
+        void tryMarkPlaying();
       }, STALL_FAILOVER_MS);
+
+      nudgeTimer = window.setInterval(() => {
+        if (cancelled || shellReadyRef.current) return;
+        void nudgeEmbedPlayback(wv);
+      }, NUDGE_INTERVAL_MS);
     };
 
     const onFail = (e) => {
       if (gen !== loadGenRef.current) return;
+      const code = e?.errorCode ?? e?.detail?.errorCode;
+      if (code === -3) return;
       clearLoading();
       setLoadSlow(true);
       onLoadFail?.(e);
@@ -188,6 +224,7 @@ export function useFastPlayerLoad({
       wv.removeEventListener("did-finish-load", onShellReady);
       wv.removeEventListener("did-fail-load", onFail);
       if (stallTimer) clearTimeout(stallTimer);
+      if (nudgeTimer) clearInterval(nudgeTimer);
       if (healthPoll) clearInterval(healthPoll);
     };
   }, [
@@ -226,6 +263,10 @@ export function useFastPlayerLoad({
     retryLoad,
     bumpLoading,
     clearLoading,
-    playerWrapClass: webviewLoading ? " player-wrap--loading" : "",
+    playerWrapClass: webviewLoading
+      ? " player-wrap--loading player-wrap--show-controls"
+      : loadSlow
+        ? " player-wrap--show-controls"
+        : "",
   };
 }

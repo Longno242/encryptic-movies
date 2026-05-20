@@ -17,7 +17,11 @@ import {
 import { DEFAULT_INVIDIOUS_BASE } from "../components/TrailerModal";
 import { RATING_COUNTRIES } from "../utils/ageRating";
 import { WarningIcon } from "../components/Icons";
-import { checkForUpdates } from "../utils/updates";
+import {
+  checkForUpdates,
+  isUpdateTestMode,
+  setUpdateTestMode,
+} from "../utils/updates";
 import { GITHUB_RELEASES_URL } from "../config/github";
 import {
   HOME_ROWS,
@@ -535,6 +539,9 @@ function VersionSection() {
     const stored = storage.get(STORAGE_KEYS.AUTO_CHECK_UPDATES);
     return stored === null || stored === undefined ? true : !!stored;
   });
+  const [testUpdatePrompt, setTestUpdatePrompt] = useState(() =>
+    isUpdateTestMode(),
+  );
   const [autoSaved, setAutoSaved] = useState(false);
   const [currentVersion, setCurrentVersion] = useState("0.0.0");
 
@@ -562,6 +569,13 @@ function VersionSection() {
   const toggleAuto = (val) => {
     setAutoCheck(val);
     storage.set(STORAGE_KEYS.AUTO_CHECK_UPDATES, val ? 1 : 0);
+    setAutoSaved(true);
+    setTimeout(() => setAutoSaved(false), 1800);
+  };
+
+  const toggleTestUpdate = (val) => {
+    setTestUpdatePrompt(val);
+    setUpdateTestMode(val);
     setAutoSaved(true);
     setTimeout(() => setAutoSaved(false), 1800);
   };
@@ -675,8 +689,9 @@ function VersionSection() {
             Check for updates on startup
           </div>
           <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
-            Shows a notification banner if a new version is available. Turned on
-            by default.{" "}
+            Checks GitHub on startup. If a newer release exists, you get a
+            banner and &quot;Would you like to update?&quot; — Yes downloads the
+            installer, replaces the app, and restarts (Windows portable).{" "}
             <a
               href="#"
               style={{ color: "var(--accent)" }}
@@ -692,6 +707,35 @@ function VersionSection() {
         {autoSaved && (
           <span style={{ fontSize: 12, color: "#48c774" }}>✓ Saved</span>
         )}
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          flexWrap: "wrap",
+          marginTop: 16,
+        }}
+      >
+        <Toggle
+          value={testUpdatePrompt}
+          onChange={toggleTestUpdate}
+          title={
+            testUpdatePrompt
+              ? "Disable test update prompt"
+              : "Enable test update prompt"
+          }
+        />
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}>
+            Test update prompt
+          </div>
+          <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
+            Always show an update on next launch (for testing). Or run{" "}
+            <code style={{ fontSize: 11 }}>npm run start:test-updates</code>.
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -11,6 +11,8 @@ import { isRestricted } from "../utils/ageRating";
 import { loadHomeLayout, loadHomeViewMode } from "../utils/homeLayout";
 import { fetchAnilistTrendingAnime } from "../utils/anilistHome";
 import AnimeIssuesBanner from "../components/AnimeIssuesBanner";
+import ResumeHero from "../components/ResumeHero";
+import BrowseRowSkeleton from "../components/BrowseRowSkeleton";
 import {
   fetchHomeCatalog,
   fetchMoviesByYear,
@@ -36,6 +38,12 @@ const GENRE_LABELS = Object.fromEntries(
   GENRE_CATEGORIES.map((g) => [g.id, g.label]),
 );
 
+const ROW_SEE_ALL_MAP = {
+  trendingMovies: "trendingToday",
+  trendingTV: "trendingWeek",
+  topRated: "topRated",
+};
+
 export default function HomePage({
   trending,
   trendingTV,
@@ -52,8 +60,6 @@ export default function HomePage({
   apiKey,
   onSave,
 }) {
-  const hero = trending[0];
-
   const [similarItems, setSimilarItems] = useState([]);
   const [similarSource, setSimilarSource] = useState(null);
   const [topRatedItems, setTopRatedItems] = useState([]);
@@ -203,27 +209,39 @@ export default function HomePage({
 
   useEffect(() => {
     if (!apiKey || offline) return;
-    Promise.all([
-      tmdbFetch("/movie/top_rated?page=1", apiKey),
-      tmdbFetch("/tv/top_rated?page=1", apiKey),
-    ])
-      .then(([moviesData, tvData]) => {
-        const movies = (moviesData.results || [])
-          .slice(0, 8)
-          .map((i) => ({ ...i, media_type: "movie" }));
-        const tv = (tvData.results || [])
-          .slice(0, 8)
-          .map((i) => ({ ...i, media_type: "tv" }));
-        const merged = [];
-        const max = Math.max(movies.length, tv.length);
-        for (let i = 0; i < max; i++) {
-          if (movies[i]) merged.push(movies[i]);
-          if (tv[i]) merged.push(tv[i]);
-        }
-        setTopRatedItems(merged);
-      })
-      .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let cancelled = false;
+    const run = () => {
+      Promise.all([
+        tmdbFetch("/movie/top_rated?page=1", apiKey),
+        tmdbFetch("/tv/top_rated?page=1", apiKey),
+      ])
+        .then(([moviesData, tvData]) => {
+          if (cancelled) return;
+          const movies = (moviesData.results || [])
+            .slice(0, 8)
+            .map((i) => ({ ...i, media_type: "movie" }));
+          const tv = (tvData.results || [])
+            .slice(0, 8)
+            .map((i) => ({ ...i, media_type: "tv" }));
+          const merged = [];
+          const max = Math.max(movies.length, tv.length);
+          for (let i = 0; i < max; i++) {
+            if (movies[i]) merged.push(movies[i]);
+            if (tv[i]) merged.push(tv[i]);
+          }
+          setTopRatedItems(merged);
+        })
+        .catch(() => {});
+    };
+    const idle =
+      typeof requestIdleCallback === "function"
+        ? requestIdleCallback(run, { timeout: 1200 })
+        : window.setTimeout(run, 200);
+    return () => {
+      cancelled = true;
+      if (typeof cancelIdleCallback === "function") cancelIdleCallback(idle);
+      else clearTimeout(idle);
+    };
   }, [apiKey, offline]);
 
   const trendingMovieItems = useMemo(
@@ -356,6 +374,58 @@ export default function HomePage({
 
   const useModernRows = viewMode !== "carousel";
 
+  const resumeItem = useMemo(() => {
+    if (!inProgress?.length) return null;
+    return [...inProgress].sort(
+      (a, b) => (b.watchedAt || 0) - (a.watchedAt || 0),
+    )[0];
+  }, [inProgress]);
+
+  const resumeProgress = useMemo(() => {
+    if (!resumeItem) return 0;
+    const pk =
+      resumeItem.media_type === "movie"
+        ? `movie_${resumeItem.id}`
+        : `tv_${resumeItem.id}_s${resumeItem.season}e${resumeItem.episode}`;
+    return progress[pk] || 0;
+  }, [resumeItem, progress]);
+
+  const featuredHero = trending[0];
+
+  const focusCategory = useCallback((id) => {
+    setActiveCategory(id);
+    setShowAllRows(false);
+    requestAnimationFrame(() => {
+      document.querySelector(".category-hub")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  }, []);
+
+  const handleRowSeeAll = useCallback(
+    (rowId) => {
+      const mapped = ROW_SEE_ALL_MAP[rowId] || (getCategoryMeta(rowId) ? rowId : null);
+      if (mapped) focusCategory(mapped);
+      else if (rowId === "animeTrending") {
+        document
+          .getElementById("home-row-animeTrending")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      } else {
+        setShowAllRows(true);
+        setActiveCategory(null);
+      }
+    },
+    [focusCategory],
+  );
+
+  const canSeeAllForRow = useCallback((rowId) => {
+    if (rowId === "continue" || rowId === "becauseYouWatched" || rowId === "similar") {
+      return false;
+    }
+    return !!(ROW_SEE_ALL_MAP[rowId] || getCategoryMeta(rowId) || rowId === "animeTrending");
+  }, []);
+
   const renderRow = (id, title, items, titleHighlight = null, rowIndex = 0) => {
     if (!items || items.length === 0) return null;
     if (viewMode === "list") return renderList(id, title, titleHighlight, items);
@@ -374,6 +444,9 @@ export default function HomePage({
           ratingsMap={enrichedRatingsMap}
           launchingKey={launchingKey}
           onQuickSave={onSave}
+          onSeeAll={
+            canSeeAllForRow(id) ? () => handleRowSeeAll(id) : undefined
+          }
         />
       );
     }
@@ -412,18 +485,21 @@ export default function HomePage({
         </div>
       )}
 
-      {!offline && loading && (
-        <div className="loader">
-          <div className="spinner" />
-        </div>
+      {!offline && resumeItem && (
+        <ResumeHero
+          item={resumeItem}
+          progressPct={resumeProgress}
+          onResume={() => onSelect(resumeItem)}
+          onInfo={() => onSelect(resumeItem)}
+        />
       )}
 
-      {!offline && !loading && hero && (
+      {!offline && !resumeItem && !loading && featuredHero && (
         <div className="hero hero--premium">
           <div
             className="hero-bg"
             style={{
-              backgroundImage: `url(${imgUrl(hero.backdrop_path, "original")})`,
+              backgroundImage: `url(${imgUrl(featuredHero.backdrop_path, "original")})`,
             }}
           />
           <div className="hero-gradient" />
@@ -435,31 +511,100 @@ export default function HomePage({
           />
           <div className="hero-content">
             <div className="hero-type">Featured · Now Streaming</div>
-            <h1 className="hero-title">{hero.title || hero.name}</h1>
+            <h1 className="hero-title">{featuredHero.title || featuredHero.name}</h1>
             <div className="hero-meta">
               <span className="hero-rating">
-                <StarIcon /> {hero.vote_average?.toFixed(1)}
+                <StarIcon /> {featuredHero.vote_average?.toFixed(1)}
               </span>
-              <span>{hero.release_date?.slice(0, 4)}</span>
+              <span>{featuredHero.release_date?.slice(0, 4)}</span>
             </div>
-            <p className="hero-overview">{hero.overview}</p>
+            <p className="hero-overview">{featuredHero.overview}</p>
             <div className="hero-actions">
               <button
                 type="button"
                 className="btn btn-primary"
-                onClick={() => onSelect(hero)}
+                onClick={() => onSelect(featuredHero)}
               >
                 <PlayIcon /> Watch Now
               </button>
               <button
                 type="button"
                 className="btn btn-secondary"
-                onClick={() => onSelect(hero)}
+                onClick={() => onSelect(featuredHero)}
               >
                 More Info
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {!offline && loading && !featuredHero && !resumeItem && (
+        <div className="hero hero--premium hero--skeleton" aria-hidden>
+          <div className="skeleton-hero-bg" />
+          <div className="hero-gradient" />
+        </div>
+      )}
+
+      {rowVisible.continue && inProgress.length > 0 && !offline && (
+        <div className="home-continue-section">
+          {useModernRows ? (
+            <MediaBrowseRow
+              rowId="continue"
+              title={resumeItem ? "More in progress" : "Continue Watching"}
+              titleHighlight={null}
+              items={inProgress.map((item) => ({
+                ...item,
+                media_type: item.media_type || "movie",
+              }))}
+              rowIndex={0}
+              onSelectWithFx={handleSelectWithFx}
+              watched={watched}
+              onMarkWatched={onMarkWatched}
+              onMarkUnwatched={onMarkUnwatched}
+              ratingsMap={enrichedRatingsMap}
+              launchingKey={launchingKey}
+              onQuickSave={onSave}
+              progressMap={progress}
+            />
+          ) : (
+            <div key="continue" id="home-row-continue" className="section home-row">
+              <div className="section-title">Continue Watching</div>
+              <div className="cards-grid">
+                {inProgress.map((item) => {
+                  const pk =
+                    item.media_type === "movie"
+                      ? `movie_${item.id}`
+                      : `tv_${item.id}_s${item.season}e${item.episode}`;
+                  const r = getRating(item);
+                  const restr = itemRestricted(item);
+                  return (
+                    <MediaCard
+                      key={`${item.media_type}_${item.id}`}
+                      item={item}
+                      onClick={() => onSelect(item)}
+                      progress={progress[pk] || 0}
+                      watched={watched}
+                      onMarkWatched={onMarkWatched}
+                      onMarkUnwatched={onMarkUnwatched}
+                      ageRating={r.cert}
+                      restricted={restr}
+                      modern
+                      showQuickActions={false}
+                      staggerIndex={inProgress.indexOf(item)}
+                      onQuickSave={onSave}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!offline && !loading && animeTrending.length > 0 && (
+        <div className="home-anime-spotlight">
+          {renderRow("animeTrending", "Trending Anime", animeTrending, null, 0)}
         </div>
       )}
 
@@ -480,8 +625,12 @@ export default function HomePage({
         />
       )}
 
-      {catalogLoading && !catalog?.inTheaters?.length && !offline && (
-        <div className="home-catalog-loading">Loading categories…</div>
+      {catalogLoading && !catalog?.inTheaters?.length && !offline && useModernRows && (
+        <>
+          <BrowseRowSkeleton count={8} rowIndex={1} />
+          <BrowseRowSkeleton count={8} rowIndex={2} />
+          <BrowseRowSkeleton count={8} rowIndex={3} />
+        </>
       )}
 
       {focusedCategory && focusedCategory.items?.length > 0 && (
@@ -500,43 +649,12 @@ export default function HomePage({
         </p>
       )}
 
-      {rowVisible.continue && inProgress.length > 0 && (
-        <div key="continue" id="home-row-continue" className="section home-row">
-          <div className="section-title">Continue Watching</div>
-          <div className="cards-grid">
-            {inProgress.map((item) => {
-              const pk =
-                item.media_type === "movie"
-                  ? `movie_${item.id}`
-                  : `tv_${item.id}_s${item.season}e${item.episode}`;
-              const r = getRating(item);
-              const restr = itemRestricted(item);
-              return (
-                <MediaCard
-                  key={`${item.media_type}_${item.id}`}
-                  item={item}
-                  onClick={() => onSelect(item)}
-                  progress={progress[pk] || 0}
-                  watched={watched}
-                  onMarkWatched={onMarkWatched}
-                  onMarkUnwatched={onMarkUnwatched}
-                  ageRating={r.cert}
-                  restricted={restr}
-                  modern
-                  showQuickActions={false}
-                  staggerIndex={inProgress.indexOf(item)}
-                  onQuickSave={onSave}
-                />
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       {showAllRows &&
-        dedupedBrowseRows.map((row, index) =>
-          renderRow(row.id, row.title, row.items, row.titleHighlight, index),
-        )}
+        dedupedBrowseRows
+          .filter((row) => row.id !== "continue" && row.id !== "animeTrending")
+          .map((row, index) =>
+            renderRow(row.id, row.title, row.items, row.titleHighlight, index),
+          )}
     </div>
   );
 }

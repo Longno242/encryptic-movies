@@ -38,7 +38,7 @@ export function buildAutoplayNudgeScript() {
       for (var n = 0; n < nodes.length; n++) {
         var el = nodes[n];
         var t = (el.textContent || el.getAttribute('aria-label') || '').toLowerCase();
-        if (/^\\s*play\\s*$|watch now|click to play|▶|start/.test(t)) {
+        if (/^\\s*play\\s*$|watch now|click to play|tap to play|▶|start|unmute/i.test(t)) {
           el.click();
           return true;
         }

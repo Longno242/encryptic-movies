@@ -1,8 +1,11 @@
-import { resolveDsLang, embedLangLabel } from "./playbackLang";
+import {
+  resolveSubtitleLang,
+  resolveAudioLang,
+  embedLangLabel,
+} from "./playbackLang";
 import {
   buildAnimeEmbedUrl,
   buildAnimeTmdbFallbackUrl,
-  shouldUseAnilistPlayback,
 } from "./animePlayback";
 
 const TMDB_ROOT = "https://api.themoviedb.org/3";
@@ -236,6 +239,7 @@ function findSource(id) {
 }
 
 const ANIME_SOURCE_ORDER = [
+  "neon",
   "vidsrc",
   "vidsrc-anime",
   "2embed",
@@ -316,39 +320,36 @@ export const getSourceUrl = (sourceId, type, id, season, ep, opts = {}) => {
   const preferredLangName =
     opts.preferredLangName || embedLangLabel(preferredLang);
   const isAnime = !!opts.isAnime;
-  const dsLang = resolveDsLang({
-    dubMode,
-    preferredLang,
-    originalLang,
-    isAnime,
-  });
+  const langOpts = { dubMode, preferredLang, originalLang, isAnime };
+  const subLang = resolveSubtitleLang(langOpts);
+  const audioLang = resolveAudioLang(langOpts);
 
-  if (
-    isAnime &&
-    type === "tv" &&
-    shouldUseAnilistPlayback({
-      isAnime,
-      anilistId: opts.anilistId,
-      anilistEpisode: opts.anilistEpisode ?? ep,
-    }) &&
-    sourceId !== "allmanga"
-  ) {
-    return buildAnimeEmbedUrl(sourceId, {
-      anilistId: opts.anilistId,
-      malId: opts.malId,
-      tmdbId: id,
-      season,
-      episode: ep,
-      anilistEpisode: opts.anilistEpisode ?? ep,
-      dubMode,
-      preferredLang,
-      originalLang,
-      reloadToken: opts.reloadToken,
-    });
-  }
-
+  // Anime TV: TMDB embeds by default; AniList-native URLs when failover toggles mode.
   if (isAnime && type === "tv" && sourceId !== "allmanga") {
-    return buildAnimeTmdbFallbackUrl(sourceId, id, season, ep, {
+    const tmdbSeason = season ?? 1;
+    const tmdbEp = Math.max(1, Number(ep) || 1);
+    const anilistId = opts.anilistId;
+    const useAnilist =
+      opts.useAnilistPlayback &&
+      anilistId &&
+      (sourceId === "vidsrc" ||
+        sourceId === "vidsrc-anime" ||
+        sourceId === "2embed" ||
+        sourceId === "2embed-anime" ||
+        sourceId === "vidplus");
+    if (useAnilist) {
+      return buildAnimeEmbedUrl(sourceId, {
+        anilistId,
+        malId: opts.malId,
+        anilistEpisode: opts.anilistEpisode ?? tmdbEp,
+        episode: opts.anilistEpisode ?? tmdbEp,
+        dubMode,
+        preferredLang,
+        originalLang,
+        reloadToken: opts.reloadToken,
+      });
+    }
+    return buildAnimeTmdbFallbackUrl(sourceId, id, tmdbSeason, tmdbEp, {
       dubMode,
       preferredLang,
       originalLang,
@@ -359,58 +360,42 @@ export const getSourceUrl = (sourceId, type, id, season, ep, opts = {}) => {
   let url = type === "movie" ? src.movieUrl(id) : src.tvUrl(id, season, ep);
 
   if (
-    isAnime &&
-    type === "movie" &&
-    opts.anilistId &&
-    (sourceId === "vidsrc" || sourceId === "vidsrc-anime")
-  ) {
-    const dubFlag = dubMode === "dub" ? "1" : "0";
-    url = withQuery(`https://vidsrc.icu/embed/anime/${opts.anilistId}/1/${dubFlag}`, {
-      ds_lang: dsLang,
-      autoplay: "1",
-    });
-    if (opts.reloadToken != null) {
-      url = withQuery(url, { _rd: String(opts.reloadToken) });
-    }
-    return url;
-  }
-
-  if (
     sourceId === "vidsrc" ||
     sourceId === "vidsrc-anime"
   ) {
     url = withQuery(url, {
       ...(isAnime ? { dub: dubMode === "dub" ? "1" : "0" } : {}),
-      ds_lang: dsLang,
+      ds_lang: subLang,
       autoplay: "1",
     });
   } else if (sourceId === "2embed" || sourceId === "2embed-anime") {
     url = withQuery(url, {
-      lang: dsLang,
+      lang: subLang,
       audio: dubMode === "dub" ? "dub" : "sub",
     });
   } else if (sourceId === "videasy" || sourceId === "videasy-anime") {
     url = withQuery(url, {
-      lang: dsLang,
-      audioLang: dsLang,
+      lang: subLang,
+      audioLang: dubMode === "dub" ? subLang : audioLang,
       autoplay: "1",
     });
   } else if (sourceId === "vidplus") {
     url = withQuery(url, {
       autoplay: "true",
       autonext: "true",
-      lang: dsLang,
-      default_lang: dsLang,
+      lang: subLang,
+      default_lang: subLang,
     });
   } else if (sourceId === "vidnest") {
     url = withQuery(url, {
-      lang: dsLang,
-      ds_lang: dsLang,
+      lang: subLang,
+      ds_lang: subLang,
     });
   } else if (sourceId === "neon") {
     url = withQuery(url, {
       autoplay: "1",
       autoPlay: "true",
+      ...(isAnime ? { sub_lang: subLang, ds_lang: subLang } : {}),
     });
   }
 
@@ -545,6 +530,51 @@ function titlesMatchSearch(cachedMedia, searchTitle) {
   const needle = searchTitle.toLowerCase();
   return labels.some((t) => t.includes(needle) || needle.includes(t));
 }
+
+function anilistYearMatches(meta, media) {
+  const want =
+    meta?.first_air_date?.slice(0, 4) ||
+    meta?.release_date?.slice(0, 4) ||
+    meta?.year;
+  const got = media?.startDate?.year || media?.seasonYear;
+  if (!want || !got) return true;
+  return Math.abs(Number(want) - Number(got)) <= 2;
+}
+
+/**
+ * Resolve AniList media for a TMDB anime title (search + alternative titles).
+ */
+export const fetchAnilistForAnime = async (item, details, apiKey) => {
+  const meta = details || item;
+  const title = (meta.name || meta.title || "").trim();
+  const tmdbId = meta.id ?? item?.id ?? null;
+
+  let data = await fetchAnilistData(title, "ANIME", tmdbId);
+  if (data?.id && anilistYearMatches(meta, data)) return data;
+
+  if (!apiKey || !tmdbId) return data?.id ? data : null;
+
+  try {
+    const tv = await tmdbFetch(`/tv/${tmdbId}`, apiKey);
+    const queries = new Set(
+      [
+        title,
+        tv.original_name,
+        tv.name,
+        ...(tv.alternative_titles?.results || []).map((t) => t.title),
+      ].filter(Boolean),
+    );
+    for (const q of queries) {
+      const hit = await fetchAnilistData(String(q).trim(), "ANIME", tmdbId);
+      if (hit?.id && anilistYearMatches(meta, hit)) return hit;
+      if (hit?.id && !data?.id) data = hit;
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return data?.id ? data : null;
+};
 
 export const fetchAnilistData = async (
   title,

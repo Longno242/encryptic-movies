@@ -22,11 +22,35 @@ export function embedLangLabel(code) {
   return EMBED_LANG_NAMES[key] || EMBED_LANG_NAMES.en || "English";
 }
 
-/** Subtitle / embed language code for VidSrc, 2Embed, etc. */
-export function resolveDsLang({ dubMode, preferredLang, originalLang, isAnime }) {
+/** Subtitle track language for embed query params (ds_lang, lang, etc.). */
+export function resolveSubtitleLang({
+  dubMode,
+  preferredLang,
+  originalLang,
+  isAnime,
+}) {
+  const pref = (preferredLang || "en").slice(0, 2).toLowerCase();
+  const orig = (originalLang || "ja").slice(0, 2).toLowerCase();
+  if (dubMode === "dub") return pref;
+  if (isAnime) return pref;
+  return orig !== "en" ? orig : pref;
+}
+
+/** Audio language hint when a host exposes a separate audio param. */
+export function resolveAudioLang({
+  dubMode,
+  preferredLang,
+  originalLang,
+  isAnime,
+}) {
   const pref = (preferredLang || "en").slice(0, 2).toLowerCase();
   const orig = (originalLang || "ja").slice(0, 2).toLowerCase();
   if (dubMode === "dub") return pref;
   if (isAnime) return orig;
   return orig !== "en" ? orig : pref;
+}
+
+/** @deprecated Use resolveSubtitleLang — kept for existing imports. */
+export function resolveDsLang(opts) {
+  return resolveSubtitleLang(opts);
 }

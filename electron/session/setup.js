@@ -21,6 +21,8 @@ const MEDIA_URL_PATTERNS = [
   "*://*/*.m3u8",
   "*://*/*.vtt*",
   "*://*/*.vtt",
+  "*://*/*.srt*",
+  "*://*/*.srt",
 ];
 
 const CHROME_UA =
@@ -92,7 +94,7 @@ function handlePlayerRequest(details, hooks, callback) {
             }
           })();
         win.webContents.send("m3u8-found", { url, referer });
-      } else if (url.includes(".vtt")) {
+      } else if (url.includes(".vtt") || url.includes(".srt")) {
         win.webContents.send("subtitle-found", {
           url,
           lang: extractSubtitleLang(url),

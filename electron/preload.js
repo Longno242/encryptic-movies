@@ -88,6 +88,13 @@ contextBridge.exposeInMainWorld("electron", {
   },
   offWebviewLeaveFullscreen: (h) =>
     ipcRenderer.removeListener("webview-leave-fullscreen", h),
+  onWebviewRequestAppFullscreen: (cb) => {
+    const h = () => cb();
+    ipcRenderer.on("webview-request-app-fullscreen", h);
+    return h;
+  },
+  offWebviewRequestAppFullscreen: (h) =>
+    ipcRenderer.removeListener("webview-request-app-fullscreen", h),
   setPlayerWindowFullscreen: (enabled) =>
     ipcRenderer.invoke("set-player-window-fullscreen", enabled),
   onPlayerWindowFullscreenChanged: (cb) => {

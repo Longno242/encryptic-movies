@@ -1,6 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { imgUrl } from "../utils/api";
 import {
+  isSidebarCollapsed,
+  setSidebarCollapsed,
+} from "../utils/sidebarLayout";
+import {
   EncrypticLogo,
   HomeIcon,
   SearchIcon,
@@ -32,6 +36,15 @@ export default function Sidebar({
   const [contextMenu, setContextMenu] = useState(null);
   const dragFromIndex = useRef(null);
   const dragEl = useRef(null);
+  const [collapsed, setCollapsed] = useState(() => isSidebarCollapsed());
+
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed((c) => {
+      const next = !c;
+      setSidebarCollapsed(next);
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     const dismiss = () => setContextMenu(null);
@@ -80,16 +93,30 @@ export default function Sidebar({
   }, []);
 
   return (
-    <aside className="sidebar">
-      <button
-        type="button"
-        className="sidebar-brand"
-        onClick={() => onNavigate("home")}
-        title="Encryptic Movies home"
-        aria-label="Encryptic Movies home"
-      >
-        <EncrypticLogo size={88} className="sidebar-brand-logo" />
-      </button>
+    <aside className={`sidebar${collapsed ? " sidebar--collapsed" : ""}`}>
+      <div className="sidebar-top">
+        <button
+          type="button"
+          className="sidebar-brand"
+          onClick={() => onNavigate("home")}
+          title="Encryptic Movies home"
+          aria-label="Encryptic Movies home"
+        >
+          <EncrypticLogo
+            size={collapsed ? 40 : 88}
+            className="sidebar-brand-logo"
+          />
+        </button>
+        <button
+          type="button"
+          className="sidebar-collapse-btn"
+          onClick={toggleCollapsed}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {collapsed ? "»" : "«"}
+        </button>
+      </div>
 
       <nav className="sidebar-nav" aria-label="Main">
         {canGoBack && (
@@ -126,6 +153,7 @@ export default function Sidebar({
 
       <div className="sidebar-sep" aria-hidden="true" />
 
+      {!collapsed && (
       <div className="sidebar-saved">
         {savedList.map((item, index) => {
           const title = item.title || item.name;
@@ -183,6 +211,7 @@ export default function Sidebar({
           );
         })}
       </div>
+      )}
 
       {tooltip && (
         <div className="saved-thumb-tooltip" style={{ top: tooltip.y }}>
@@ -249,6 +278,7 @@ function NavBtn({ active, onClick, icon, label, badge, danger }) {
       className={`sidebar-btn${active ? " active" : ""}${danger ? " sidebar-btn--danger" : ""}`}
       onClick={onClick}
       style={{ position: "relative" }}
+      title={label}
     >
       <span className="sidebar-btn-icon" aria-hidden="true">
         {icon}

@@ -20,6 +20,9 @@ const MediaBrowseRow = memo(function MediaBrowseRow({
   onQuickSave,
   activePickListId = null,
   isItemPicked,
+  progressMap = null,
+  onSeeAll = null,
+  seeAllLabel = "See all",
 }) {
   const scrollerRef = useRef(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -67,6 +70,15 @@ const MediaBrowseRow = memo(function MediaBrowseRow({
           )}
         </h2>
         <div className="browse-row__nav">
+          {onSeeAll && (
+            <button
+              type="button"
+              className="browse-row__see-all"
+              onClick={onSeeAll}
+            >
+              {seeAllLabel}
+            </button>
+          )}
           <button
             type="button"
             className="browse-row__arrow"
@@ -102,6 +114,14 @@ const MediaBrowseRow = memo(function MediaBrowseRow({
             const rk = `${type}_${item.id}`;
             const rd = ratingsMap[rk] || {};
             const cardKey = `${type}_${item.id}`;
+            const progressKey =
+              progressMap && type === "tv" && item.season != null
+                ? `tv_${item.id}_s${item.season}e${item.episode}`
+                : progressMap
+                  ? `movie_${item.id}`
+                  : null;
+            const pct =
+              progressKey && progressMap ? progressMap[progressKey] || 0 : 0;
             const handleClick = () => {
               if (onSelectWithFx) onSelectWithFx(item, cardKey);
               else onSelect?.(item);
@@ -115,7 +135,7 @@ const MediaBrowseRow = memo(function MediaBrowseRow({
                 <MediaCard
                   item={item}
                   onClick={handleClick}
-                  progress={0}
+                  progress={pct}
                   watched={watched}
                   onMarkWatched={onMarkWatched}
                   onMarkUnwatched={onMarkUnwatched}

@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback, memo } from "react";
 import { imgUrl, isAnimeContent } from "../utils/api";
+import { isFreeMetadataMode } from "../utils/metadataMode";
+import { itemHasPoster, resolveFreePoster } from "../utils/freePosterResolver";
 import {
   PlayIcon,
   FilmIcon,
@@ -28,6 +30,30 @@ const MediaCard = memo(function MediaCard({
   onQuickSave,
   showQuickActions = true,
 }) {
+  const [fallbackPoster, setFallbackPoster] = useState(null);
+  const posterFallbackTried = useRef(false);
+
+  useEffect(() => {
+    setFallbackPoster(null);
+    posterFallbackTried.current = false;
+  }, [item?.id, item?.poster_path, item?.media_type, item?._source]);
+
+  const primaryPosterSrc = itemHasPoster(item)
+    ? imgUrl(item.poster_path, "w500")
+    : null;
+
+  useEffect(() => {
+    if (!isFreeMetadataMode() || primaryPosterSrc || fallbackPoster) return;
+    let cancelled = false;
+    resolveFreePoster(item).then((url) => {
+      if (!cancelled && url) setFallbackPoster(url);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [item, primaryPosterSrc, fallbackPoster]);
+
+  const posterSrc = primaryPosterSrc || fallbackPoster;
   const [pressing, setPressing] = useState(false);
   const [tilt, setTilt] = useState({ x: 0, y: 0 });
   const [ripple, setRipple] = useState(null);
@@ -177,12 +203,19 @@ const MediaCard = memo(function MediaCard({
         <div className="card-ambient" aria-hidden />
         <div className="card-inner">
           <div className="card-poster">
-            {item.poster_path ? (
+            {posterSrc ? (
               <img
-                src={imgUrl(item.poster_path, "w500")}
+                src={posterSrc}
                 alt=""
                 loading="lazy"
                 decoding="async"
+                onError={async () => {
+                  if (posterFallbackTried.current) return;
+                  posterFallbackTried.current = true;
+                  if (!isFreeMetadataMode()) return;
+                  const url = await resolveFreePoster(item);
+                  if (url) setFallbackPoster(url);
+                }}
               />
             ) : (
               <div className="no-poster">

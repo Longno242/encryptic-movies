@@ -3712,6 +3712,71 @@ kbd {
     color: #e53e3e;
 }
 
+.player-episode-nav {
+    position: absolute;
+    inset: 0;
+    z-index: 9;
+    pointer-events: none;
+}
+
+.player-episode-nav__btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 48px;
+    height: 72px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    cursor: pointer;
+    pointer-events: auto;
+    opacity: 0;
+    transition: opacity 0.25s ease, background 0.15s ease;
+    backdrop-filter: blur(6px);
+}
+
+.player-episode-nav__btn svg {
+    width: 28px;
+    height: 28px;
+}
+
+.player-episode-nav__btn--prev {
+    left: 10px;
+}
+
+.player-episode-nav__btn--next {
+    right: 10px;
+}
+
+.player-episode-nav__btn:hover:not(:disabled) {
+    background: rgba(196, 163, 90, 0.35);
+}
+
+.player-episode-nav__btn:disabled {
+    opacity: 0 !important;
+    pointer-events: none;
+    cursor: default;
+}
+
+.player-wrap:hover .player-episode-nav__btn:not(:disabled),
+.player-wrap--show-controls .player-episode-nav__btn:not(:disabled),
+.player-wrap--loading .player-episode-nav__btn:not(:disabled) {
+    opacity: 1;
+}
+
+.player-wrap--fullscreen .player-episode-nav__btn:not(:disabled) {
+    opacity: 0;
+}
+
+.player-wrap--fullscreen:hover .player-episode-nav__btn:not(:disabled),
+.player-wrap--fullscreen:focus-within .player-episode-nav__btn:not(:disabled) {
+    opacity: 1;
+}
+
 .player-overlay-group {
     position: absolute;
     top: 12px;

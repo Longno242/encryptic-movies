@@ -85,7 +85,7 @@ async function openTutorial() {
   window.electron.openPath?.(path);
 }
 
-export default function SetupScreen({ onSave, onSkip, onOpenDocs }) {
+export default function SetupScreen({ onSave, onSkip, onBack, onOpenDocs }) {
   const [key, setKey] = useState("");
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState(null);
@@ -234,7 +234,12 @@ export default function SetupScreen({ onSave, onSkip, onOpenDocs }) {
           )}
         </button>
 
-        {onSkip && (
+        {onBack && (
+          <button type="button" className="apikey-skip" onClick={onBack}>
+            ← Back
+          </button>
+        )}
+        {onSkip && !onBack && (
           <button type="button" className="apikey-skip" onClick={onSkip}>
             Skip for now
           </button>

@@ -105,11 +105,9 @@ function buildAssetMap(release) {
   }
   for (const [slot, list] of Object.entries(bySlot)) {
     if (slot === "exe") {
-      list.sort((a, b) => {
-        const aSetup = /setup|installer/i.test(a.name) ? 1 : 0;
-        const bSetup = /setup|installer/i.test(b.name) ? 1 : 0;
-        return aSetup - bSetup;
-      });
+      const portable = list.filter((a) => !/setup|installer/i.test(a.name));
+      if (portable.length) map[slot] = portable[0].url;
+      continue;
     }
     map[slot] = list[0]?.url;
   }

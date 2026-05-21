@@ -2,14 +2,16 @@
 
 const MIN_SPLASH_MS = 1200;
 const ESTIMATED_TOTAL_MS = 2000;
+const MAX_SPLASH_MS = 14000;
 const STEP_ORDER = ["engine", "secure", "api", "ui"];
 
-const bootStarted =
+let bootStarted =
   typeof performance !== "undefined" ? performance.now() : Date.now();
 
 let dismissed = false;
 let finishRequested = false;
 let timeTimer = null;
+let safetyTimer = null;
 
 function $(id) {
   return document.getElementById(id);
@@ -98,10 +100,40 @@ export function bootStep(label, progress, activeStep) {
   updateTimeRemaining();
 }
 
+/** Reset splash state (React StrictMode remounts startup). */
+export function resetBootSplash() {
+  dismissed = false;
+  finishRequested = false;
+  bootStarted =
+    typeof performance !== "undefined" ? performance.now() : Date.now();
+  if (safetyTimer) {
+    clearTimeout(safetyTimer);
+    safetyTimer = null;
+  }
+}
+
+/** Force-dismiss splash if startup hangs (secure storage / network). */
+export function armBootSplashSafety(onTimeout) {
+  if (safetyTimer) clearTimeout(safetyTimer);
+  safetyTimer = setTimeout(() => {
+    safetyTimer = null;
+    if (!dismissed) onTimeout?.();
+    dismissBootSplash();
+  }, MAX_SPLASH_MS);
+}
+
 /** Mark startup complete — animates to 100% then dismisses */
 export function bootFinish(finalLabel = "Launch complete") {
-  if (dismissed || finishRequested) return;
+  if (dismissed) return;
+  if (finishRequested) {
+    dismissBootSplash();
+    return;
+  }
   finishRequested = true;
+  if (safetyTimer) {
+    clearTimeout(safetyTimer);
+    safetyTimer = null;
+  }
 
   bootStep(finalLabel, 100);
   markAllStepsDone();
@@ -117,10 +149,22 @@ export function bootFinish(finalLabel = "Launch complete") {
 export function dismissBootSplash() {
   if (dismissed) return;
   const el = $("boot-splash");
-  if (!el) return;
+  if (!el) {
+    dismissed = true;
+    stopEtaTimer();
+    if (safetyTimer) {
+      clearTimeout(safetyTimer);
+      safetyTimer = null;
+    }
+    return;
+  }
 
   dismissed = true;
   stopEtaTimer();
+  if (safetyTimer) {
+    clearTimeout(safetyTimer);
+    safetyTimer = null;
+  }
 
   const elapsed = performance.now() - bootStarted;
   const wait = Math.max(0, MIN_SPLASH_MS - elapsed);
@@ -132,9 +176,20 @@ export function dismissBootSplash() {
   }, wait);
 }
 
+let globalSafetyTimer = null;
+
 export function initBootSplash() {
   bootStep("Starting Encryptic Movies…", 4, "engine");
   startEtaTimer();
+
+  if (globalSafetyTimer) clearTimeout(globalSafetyTimer);
+  globalSafetyTimer = setTimeout(() => {
+    globalSafetyTimer = null;
+    if (!dismissed) {
+      console.warn("[boot] Global safety — dismissing splash");
+      dismissBootSplash();
+    }
+  }, MAX_SPLASH_MS);
 }
 
 if (typeof document !== "undefined") {

@@ -82,6 +82,7 @@ export const STORAGE_KEYS = {
   INTRO_SKIP_MODE: "introSkipMode",
   DISCORD_RPC_ENABLED: "discordRpcEnabled",
   DISCORD_RPC_CONFIG: "discordRpcConfig",
+  METADATA_MODE: "metadataMode",
   DL_SORT_BY: "dlSortBy",
   DL_SORT_DIR: "dlSortDir",
   DL_SHOW_UNTRACKED: "dlShowUntracked",

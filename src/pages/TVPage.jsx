@@ -75,6 +75,8 @@ import {
   ShieldBlockIcon,
   PopOutIcon,
   FullscreenIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
 } from "../components/Icons";
 import DownloadModal from "../components/DownloadModal";
 import TrailerModal from "../components/TrailerModal";
@@ -87,6 +89,12 @@ import {
 } from "../utils/discordPresence";
 import { probeVideoProgress, seekWebviewTo } from "../utils/videoProgressProbe";
 import { fetchAniSkipTimings } from "../utils/aniSkip";
+import {
+  tvmazeFetchShow,
+  resolveFreeTvShowDetails,
+} from "../utils/tvmazeApi";
+import { isFreeMetadataMode } from "../utils/metadataMode";
+import { enrichFreeMediaImages } from "../utils/freePosterResolver";
 import {
   fetchTVRating,
   isRestricted,
@@ -504,6 +512,10 @@ export default function TVPage({
     () => storage.get("watchedThreshold") ?? 20,
   );
   const autoMarkedRef = useRef(false);
+  const autoNextTriggeredRef = useRef(false);
+  const pendingSeasonAutoPlayRef = useRef(null);
+  const playNextEpisodeRef = useRef(null);
+  const hasNextEpisodeRef = useRef(false);
   const lastKnownTimeRef = useRef(0);
   const durationRef = useRef(0); // tracked for AniSkip progress bar markers
   const seekBackCooldownRef = useRef(0);
@@ -512,11 +524,28 @@ export default function TVPage({
   useEffect(() => {
     let mounted = true;
     setLoading(true);
-    tmdbFetch(`/tv/${item.id}`, apiKey)
-      .then((d) => {
+    const load =
+      item._source === "tvmaze"
+        ? tvmazeFetchShow(item.tvmazeId || item.id)
+        : apiKey
+          ? tmdbFetch(`/tv/${item.id}`, apiKey)
+          : item._anilistOnly
+            ? Promise.resolve(item)
+            : resolveFreeTvShowDetails(item);
+
+    load
+      .then(async (d) => {
         if (!mounted) return;
-        setDetails(d);
-        // Only fall back to first season when no specific season was requested
+        const needsEnrich =
+          isFreeMetadataMode() ||
+          item._source === "tvmaze" ||
+          item._anilistOnly ||
+          !!d?._seasonEpisodes;
+        const enriched = needsEnrich
+          ? await enrichFreeMediaImages(d)
+          : d;
+        if (!mounted) return;
+        setDetails(enriched);
         if (item.season == null) {
           const first =
             d.seasons?.find((s) => s.season_number > 0) || d.seasons?.[0];
@@ -532,7 +561,7 @@ export default function TVPage({
     return () => {
       mounted = false;
     };
-  }, [item.id, apiKey]);
+  }, [item.id, item._source, apiKey]);
 
   // ── Fetch episode group mapping if this show has one ─────────────────────
   useEffect(() => {
@@ -561,6 +590,7 @@ export default function TVPage({
   }, [item.id, apiKey]);
 
   useEffect(() => {
+    if (!apiKey) return;
     let mounted = true;
     tmdbFetch(`/tv/${item.id}/videos`, apiKey)
       .then((data) => {
@@ -578,6 +608,10 @@ export default function TVPage({
   }, [item.id, apiKey]);
 
   useEffect(() => {
+    if (!apiKey) {
+      setRating({ cert: null, minAge: null });
+      return;
+    }
     let mounted = true;
     fetchTVRating(item.id, apiKey, ratingCountry).then((r) => {
       if (mounted) setRating(r);
@@ -588,7 +622,23 @@ export default function TVPage({
   }, [item.id, apiKey, ratingCountry]);
 
   useEffect(() => {
-    if (!apiKey || !item.id) return;
+    if (!item.id) return;
+
+    if (details?._seasonEpisodes) {
+      setLoadingSeason(true);
+      setSelectedEp(null);
+      setPlaying(false);
+      const eps = details._seasonEpisodes[selectedSeason];
+      setSeasonData(eps?.length ? { episodes: eps } : null);
+      setLoadingSeason(false);
+      return;
+    }
+
+    if (!apiKey) {
+      setLoadingSeason(false);
+      setSeasonData(null);
+      return;
+    }
     // Episode group data already contains all episodes -> no TMDB season fetch
     if (episodeGroupData) {
       setSelectedEp(null);
@@ -625,7 +675,7 @@ export default function TVPage({
     return () => {
       mounted = false;
     };
-  }, [item.id, selectedSeason, apiKey, anilistSeasons]);
+  }, [item.id, item._source, selectedSeason, apiKey, anilistSeasons, details?._seasonEpisodes]);
 
   // Reset m3u8 URL, subtitle URL and source menu whenever the series, episode, or source changes
   useEffect(() => {
@@ -908,6 +958,17 @@ export default function TVPage({
     onStuck: onLoadStuck,
   };
 
+  const playbackTmdbId = useMemo(() => {
+    const fromDetails = details?._tmdbId;
+    if (Number.isFinite(fromDetails) && fromDetails > 0) return fromDetails;
+    if (item._source !== "tvmaze" && Number(item.id) > 0) return Number(item.id);
+    return null;
+  }, [details?._tmdbId, item.id, item._source]);
+
+  const streamTmdbId =
+    playbackTmdbId ??
+    (item._source !== "tvmaze" && Number(item.id) > 0 ? Number(item.id) : null);
+
   const title = d.name || d.title;
   const year = (d.first_air_date || "").slice(0, 4);
   const discordPresenceRef = useRef({ title: "", posterUrl: "", year: "" });
@@ -1002,10 +1063,16 @@ export default function TVPage({
     }
     const rawSeason = selectedEp._tmdbSeason ?? selectedSeason;
     const rawEpisode = selectedEp._tmdbAbsolute ?? selectedEp.episode_number;
-    return applyEpisodeMapping(item.id, rawSeason, rawEpisode, episodeGroupMap);
+    return applyEpisodeMapping(
+      playbackTmdbId ?? item.id,
+      rawSeason,
+      rawEpisode,
+      episodeGroupMap,
+    );
   }, [
     selectedEp,
     selectedSeason,
+    playbackTmdbId,
     item.id,
     episodeGroupMap,
     useAnilistSeasons,
@@ -1021,7 +1088,7 @@ export default function TVPage({
     const url = getSourceUrl(
       playerSource,
       "tv",
-      item.id,
+      streamTmdbId,
       playerEp.season,
       playerEp.episode,
       embedUrlOpts,
@@ -1213,9 +1280,10 @@ export default function TVPage({
       ) ?? null)
     : null;
 
-  // Reset auto-mark guard when episode changes
+  // Reset auto-mark / auto-next guards when episode changes
   useEffect(() => {
     autoMarkedRef.current = false;
+    autoNextTriggeredRef.current = false;
     lastKnownTimeRef.current = 0;
     seekBackCooldownRef.current = 0;
     durationRef.current = 0;
@@ -1439,8 +1507,9 @@ export default function TVPage({
               storage.set("dlTime_" + currentProgressKey, ctFloor);
             }
 
-            // Auto-mark watched when remaining time ≤ threshold
             const remaining = result.duration - ct;
+
+            // Auto-mark watched when remaining time ≤ threshold
             if (
               !autoMarkedRef.current &&
               remaining <= watchedThreshold &&
@@ -1448,6 +1517,23 @@ export default function TVPage({
             ) {
               autoMarkedRef.current = true;
               onMarkWatchedRef.current?.(currentProgressKey);
+            }
+
+            // Auto-play next episode near end
+            if (
+              !autoNextTriggeredRef.current &&
+              result.duration > 30 &&
+              remaining <= 5 &&
+              remaining >= 0
+            ) {
+              autoNextTriggeredRef.current = true;
+              if (!autoMarkedRef.current) {
+                autoMarkedRef.current = true;
+                onMarkWatchedRef.current?.(currentProgressKey);
+              }
+              if (hasNextEpisodeRef.current) {
+                playNextEpisodeRef.current?.();
+              }
             }
           }
         } catch {}
@@ -1517,6 +1603,9 @@ export default function TVPage({
 
   const playEpisode = useCallback(
     (ep) => {
+      if (!streamTmdbId) {
+        return;
+      }
       setM3u8Url(null);
       setStreamReferer("");
       setInterceptedSubs([]);
@@ -1534,7 +1623,7 @@ export default function TVPage({
       });
       // d and selectedSeason are stable within a season view; onHistory is useCallback in App
     },
-    [d, selectedSeason, onHistory],
+    [d, selectedSeason, onHistory, streamTmdbId],
   );
 
   const currentEpIndex = useMemo(() => {
@@ -1544,13 +1633,81 @@ export default function TVPage({
     );
   }, [selectedEp, currentSeasonEpisodes]);
 
+  const seasonIndex = useMemo(
+    () => seasons.findIndex((s) => s.season_number === selectedSeason),
+    [seasons, selectedSeason],
+  );
+
+  const hasPrevEpisode = useMemo(() => {
+    if (currentEpIndex > 0) return true;
+    return seasonIndex > 0;
+  }, [currentEpIndex, seasonIndex]);
+
+  const hasNextEpisode = useMemo(() => {
+    if (
+      currentEpIndex >= 0 &&
+      currentEpIndex < currentSeasonEpisodes.length - 1
+    ) {
+      return true;
+    }
+    return seasonIndex >= 0 && seasonIndex < seasons.length - 1;
+  }, [currentEpIndex, currentSeasonEpisodes.length, seasonIndex, seasons.length]);
+
+  const playNextEpisode = useCallback(() => {
+    if (
+      currentEpIndex >= 0 &&
+      currentEpIndex < currentSeasonEpisodes.length - 1
+    ) {
+      playEpisode(currentSeasonEpisodes[currentEpIndex + 1]);
+      return;
+    }
+    if (seasonIndex < 0 || seasonIndex >= seasons.length - 1) return;
+    pendingSeasonAutoPlayRef.current = "first";
+    setSelectedSeason(seasons[seasonIndex + 1].season_number);
+  }, [
+    currentEpIndex,
+    currentSeasonEpisodes,
+    playEpisode,
+    seasonIndex,
+    seasons,
+  ]);
+
+  const playPrevEpisode = useCallback(() => {
+    if (currentEpIndex > 0) {
+      playEpisode(currentSeasonEpisodes[currentEpIndex - 1]);
+      return;
+    }
+    if (seasonIndex <= 0) return;
+    pendingSeasonAutoPlayRef.current = "last";
+    setSelectedSeason(seasons[seasonIndex - 1].season_number);
+  }, [
+    currentEpIndex,
+    currentSeasonEpisodes,
+    playEpisode,
+    seasonIndex,
+    seasons,
+  ]);
+
+  useEffect(() => {
+    const mode = pendingSeasonAutoPlayRef.current;
+    if (!mode || !currentSeasonEpisodes.length) return;
+    pendingSeasonAutoPlayRef.current = null;
+    const ep =
+      mode === "first"
+        ? currentSeasonEpisodes[0]
+        : currentSeasonEpisodes[currentSeasonEpisodes.length - 1];
+    if (ep) playEpisode(ep);
+  }, [selectedSeason, currentSeasonEpisodes, playEpisode]);
+
+  playNextEpisodeRef.current = playNextEpisode;
+  hasNextEpisodeRef.current = hasNextEpisode;
+
   const goAdjacentEpisode = useCallback(
     (dir) => {
-      const idx = currentEpIndex + dir;
-      if (idx < 0 || idx >= currentSeasonEpisodes.length) return;
-      playEpisode(currentSeasonEpisodes[idx]);
+      if (dir < 0) playPrevEpisode();
+      else playNextEpisode();
     },
-    [currentEpIndex, currentSeasonEpisodes, playEpisode],
+    [playPrevEpisode, playNextEpisode],
   );
 
   useEffect(() => {
@@ -1561,11 +1718,11 @@ export default function TVPage({
       ) {
         return;
       }
-      if (e.key === "[") {
+      if (e.key === "[" || e.key === "ArrowLeft") {
         e.preventDefault();
         goAdjacentEpisode(-1);
       }
-      if (e.key === "]") {
+      if (e.key === "]" || e.key === "ArrowRight") {
         e.preventDefault();
         goAdjacentEpisode(1);
       }
@@ -1799,21 +1956,18 @@ export default function TVPage({
                 <button
                   type="button"
                   className="btn btn-ghost"
-                  disabled={currentEpIndex <= 0}
+                  disabled={!hasPrevEpisode}
                   onClick={() => goAdjacentEpisode(-1)}
-                  title="Previous episode ([)"
+                  title="Previous episode (← or [)"
                 >
                   ← Prev
                 </button>
                 <button
                   type="button"
                   className="btn btn-ghost"
-                  disabled={
-                    currentEpIndex < 0 ||
-                    currentEpIndex >= currentSeasonEpisodes.length - 1
-                  }
+                  disabled={!hasNextEpisode}
                   onClick={() => goAdjacentEpisode(1)}
-                  title="Next episode (])"
+                  title="Next episode (→ or ])"
                 >
                   Next →
                 </button>
@@ -1965,6 +2119,34 @@ export default function TVPage({
                     </button>
                   </div>
                 )}
+                <div className="player-episode-nav" aria-hidden={!playing}>
+                  <button
+                    type="button"
+                    className="player-episode-nav__btn player-episode-nav__btn--prev"
+                    disabled={!hasPrevEpisode}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      playPrevEpisode();
+                    }}
+                    title="Previous episode (← or [)"
+                    aria-label="Previous episode"
+                  >
+                    <ChevronLeftIcon />
+                  </button>
+                  <button
+                    type="button"
+                    className="player-episode-nav__btn player-episode-nav__btn--next"
+                    disabled={!hasNextEpisode}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      playNextEpisode();
+                    }}
+                    title="Next episode (→ or ])"
+                    aria-label="Next episode"
+                  >
+                    <ChevronRightIcon />
+                  </button>
+                </div>
                 <webview
                   key={`${item.id}-${playerSource}-${animePlaybackMode}-${embedUrlOpts.anilistId ?? 0}-${selectedSeason}-${selectedEp?.episode_number ?? 0}-${dubReloadNonce}`}
                   ref={webviewRef}
@@ -1973,14 +2155,16 @@ export default function TVPage({
                       ? "about:blank"
                       : isAsync
                         ? resolvedPlayerUrl || "about:blank"
-                        : getSourceUrl(
-                            playerSource,
-                            "tv",
-                            item.id,
-                            playerEp.season,
-                            playerEp.episode,
-                            embedUrlOpts,
-                          )
+                        : streamTmdbId
+                          ? getSourceUrl(
+                              playerSource,
+                              "tv",
+                              streamTmdbId,
+                              playerEp.season,
+                              playerEp.episode,
+                              embedUrlOpts,
+                            )
+                          : "about:blank"
                   }
                   partition="persist:player"
                   allowpopups="false"
@@ -2077,14 +2261,16 @@ export default function TVPage({
                       }
                       const url = isAsync
                         ? resolvedPlayerUrl
-                        : getSourceUrl(
-                            playerSource,
-                            "tv",
-                            item.id,
-                            playerEp.season,
-                            playerEp.episode,
-                            embedUrlOpts,
-                          );
+                        : streamTmdbId
+                          ? getSourceUrl(
+                              playerSource,
+                              "tv",
+                              streamTmdbId,
+                              playerEp.season,
+                              playerEp.episode,
+                              embedUrlOpts,
+                            )
+                          : null;
                       if (!url) return;
                       pipUrlRef.current = url;
                       window.electron?.openPipWindow?.(
@@ -2432,6 +2618,22 @@ export default function TVPage({
                 <div className="spinner" />
               </div>
             )}
+            {!loadingSeason &&
+              !(isAnime && anilistLoading && !currentSeasonEpisodes.length) &&
+              currentSeasonEpisodes.length === 0 && (
+                <p
+                  style={{
+                    color: "var(--text3)",
+                    fontSize: 14,
+                    lineHeight: 1.55,
+                    marginTop: 8,
+                  }}
+                >
+                  {isFreeMetadataMode() && !apiKey
+                    ? "Episodes could not be loaded. Try again in a moment, or add a TMDB key in Settings for full series data."
+                    : "No episodes found for this season."}
+                </p>
+              )}
             {!loadingSeason &&
               !(isAnime && anilistLoading && !currentSeasonEpisodes.length) &&
               currentSeasonEpisodes.length > 0 && (

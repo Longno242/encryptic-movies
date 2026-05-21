@@ -14,12 +14,21 @@ import WindowTitlebar from "./components/WindowTitlebar";
 import { storage, secureStorage, STORAGE_KEYS } from "./utils/storage";
 import { applyAccentColor } from "./utils/appearance";
 import { collectBackupData } from "./utils/backup";
-import { tmdbFetch, setApiErrorHandlers } from "./utils/api";
+import { tmdbFetch, setApiErrorHandlers, isAnimeContent } from "./utils/api";
 import { clearAppCaches } from "./utils/storage";
 
 import Sidebar from "./components/Sidebar";
 import SearchModal from "./components/SearchModal";
-import SetupScreen from "./components/SetupScreen";
+import CatalogSetup from "./components/CatalogSetup";
+import {
+  getMetadataMode,
+  setMetadataMode,
+  isFreeMetadataMode,
+  hasActiveCatalog,
+  movieRequiresTmdbApiKey,
+  mustShowCatalogSetup,
+} from "./utils/metadataMode";
+import { fetchFreeHomeTrending } from "./utils/freeCatalog";
 import CloseConfirmModal from "./components/CloseConfirmModal";
 import UpdateModal from "./components/UpdateModal";
 
@@ -45,16 +54,21 @@ import {
   syncDiscordRpcConfig,
   setDiscordBrowsing,
 } from "./utils/discordPresence";
-import { bootStep, bootFinish } from "./utils/bootSplash";
 import { resolveAnilistToTmdb } from "./utils/anilistHome";
+import { runAppBootstrap } from "./bootstrap";
+import { bootFinish } from "./utils/bootSplash";
+import StartupGate from "./components/StartupGate";
 import { debounce } from "./utils/debounce";
 
 export default function App() {
-  // apiKey loaded async from secure storage (OS keychain)
   const [apiKey, setApiKey] = useState(null);
+  /** TMDB token from secure storage (for catalog chooser "use saved key"). */
+  const [savedApiKey, setSavedApiKey] = useState(null);
   const [apiKeyLoaded, setApiKeyLoaded] = useState(false);
-  const [skipped, setSkipped] = useState(false);
-  const [apiKeyStatus, setApiKeyStatus] = useState("checking"); // 'checking' | 'ok' | 'invalid_token' | 'unreachable'
+  const [bootStatus, setBootStatus] = useState("Starting Encryptic Movies…");
+  const [metadataMode, setMetadataModeState] = useState(() => getMetadataMode());
+  const [apiKeyStatus, setApiKeyStatus] = useState("checking");
+  const [catalogSetupRequired, setCatalogSetupRequired] = useState(false);
   const [page, setPage] = useState(() => storage.get("startPage") || "home");
   const [selected, setSelected] = useState(null);
   const [showSearch, setShowSearch] = useState(false);
@@ -346,60 +360,31 @@ export default function App() {
   const [highlightDownload, setHighlightDownload] = useState(null);
   const [closeConfirm, setCloseConfirm] = useState(null); // { count }
 
-  // ── Startup sequence (boot splash steps + secure storage + API check) ──
   useEffect(() => {
     let mounted = true;
-    async function runStartup() {
-      try {
-        bootStep("Initializing…", 12, "engine");
-
+    const gatePromise = window.electron?.isCatalogSetupRequired?.() ?? Promise.resolve({ required: false });
+    Promise.all([
+      runAppBootstrap((label) => {
+        if (mounted) setBootStatus(label);
+      }),
+      gatePromise,
+    ])
+      .then(([boot, gate]) => {
         if (!mounted) return;
-        bootStep("Opening secure storage…", 30, "secure");
-        const val = await secureStorage.get("apikey");
-        if (!mounted) return;
-
-        bootStep("Connecting to TMDB…", 50, "api");
-
-        if (val) {
-          bootStep("Verifying TMDB token…", 65, "api");
-          try {
-            const res = await fetch(
-              "https://api.themoviedb.org/3/configuration",
-              { headers: { Authorization: `Bearer ${val}` } },
-            );
-            if (!mounted) return;
-            if (res.status === 401 || res.status === 403) {
-              setApiKeyStatus("invalid_token");
-            } else {
-              setApiKeyStatus("ok");
-            }
-          } catch {
-            if (mounted) setApiKeyStatus("unreachable");
-          }
-        } else if (mounted) {
-          setApiKeyStatus("ok");
-        }
-
-        if (!mounted) return;
-        bootStep("Loading library…", 88, "ui");
-
-        if (!mounted) return;
-        setApiKey(val || null);
+        const storedKey = boot.apiKey || null;
+        setSavedApiKey(storedKey);
+        setApiKeyStatus(boot.apiKeyStatus);
+        setCatalogSetupRequired(!!gate?.required);
+        const mode = getMetadataMode();
+        setApiKey(mode === "tmdb" && storedKey ? storedKey : null);
         setApiKeyLoaded(true);
-        bootFinish(
-          val
-            ? "Welcome back to Encryptic Movies"
-            : "Ready — connect your TMDB account",
-        );
-      } catch {
+      })
+      .catch(() => {
         if (!mounted) return;
         setApiKey(null);
+        setApiKeyStatus("ok");
         setApiKeyLoaded(true);
-        bootFinish("Starting Encryptic Movies…");
-      }
-    }
-
-    runStartup();
+      });
     return () => {
       mounted = false;
     };
@@ -407,9 +392,17 @@ export default function App() {
 
   useEffect(() => {
     if (!apiKeyLoaded) return;
+    const mode = getMetadataMode();
+    bootFinish(
+      apiKey
+        ? "Welcome back to Encryptic Movies"
+        : mode === "free"
+          ? "Free catalog — TV & anime"
+          : "Choose how to browse",
+    );
     void import("./pages/MoviePage");
     void import("./pages/TVPage");
-  }, [apiKeyLoaded]);
+  }, [apiKeyLoaded, apiKey]);
 
   // ── Detect platform for Windows titlebar ──────────────────────────────────
   useEffect(() => {
@@ -440,10 +433,13 @@ export default function App() {
   // Fire on any tmdbFetch call that returns 401/403 or network failure
   useEffect(() => {
     setApiErrorHandlers(
-      () => setApiKeyStatus("invalid_token"), // 401 / 403
-      () => setApiKeyStatus("unreachable"), // network failure
+      () => {
+        if (isFreeMetadataMode() && !apiKey) return;
+        setApiKeyStatus("invalid_token");
+      },
+      () => setApiKeyStatus("unreachable"),
     );
-  }, []);
+  }, [apiKey]);
 
   // ── Validate stored API key on startup ───────────────────────────────────
   useEffect(() => {
@@ -570,16 +566,41 @@ export default function App() {
 
   const hydrateTrendingFromCache = useCallback(() => {
     const cached = storage.get("trendingCache");
-    if (cached?.ts && Date.now() - cached.ts < TRENDING_CACHE_TTL) {
-      setTrending(cached.movies || []);
-      setTrendingTV(cached.tv || []);
-      return true;
+    if (!cached?.ts || Date.now() - cached.ts >= TRENDING_CACHE_TTL) {
+      return false;
     }
-    return false;
+    const movies = cached.movies || [];
+    const tv = cached.tv || [];
+    if (!movies.length && !tv.length) return false;
+    const free = isFreeMetadataMode();
+    if (!free && cached.free && !movies.length) return false;
+    setTrending(movies);
+    setTrendingTV(tv);
+    return true;
   }, []);
 
   const fetchTrending = useCallback(() => {
-    if (!apiKey) return;
+    if (!apiKey) {
+      if (hydrateTrendingFromCache()) return;
+      setLoadingHome(true);
+      fetchFreeHomeTrending()
+        .then(({ movies, tv }) => {
+          const prev = storage.get("trendingCache");
+          const useMovies = movies.length ? movies : prev?.movies || [];
+          const useTv = tv.length ? tv : prev?.tv || [];
+          setTrending(useMovies);
+          setTrendingTV(useTv);
+          storage.set("trendingCache", {
+            movies: useMovies,
+            tv: useTv,
+            ts: Date.now(),
+            free: !useMovies.length,
+          });
+        })
+        .catch(() => {})
+        .finally(() => setLoadingHome(false));
+      return;
+    }
     if (hydrateTrendingFromCache()) return;
     setLoadingHome(true);
     Promise.all([
@@ -598,11 +619,11 @@ export default function App() {
   }, [apiKey, hydrateTrendingFromCache]);
 
   useEffect(() => {
-    if (!apiKey) return;
+    if (!hasActiveCatalog(apiKey)) return;
     if (hydrateTrendingFromCache()) return;
     if (page !== "home") return;
     fetchTrending();
-  }, [apiKey, page, fetchTrending, hydrateTrendingFromCache]);
+  }, [apiKey, page, fetchTrending, hydrateTrendingFromCache, metadataMode]);
 
   const retryHome = useCallback(() => {
     if (offline) return;
@@ -668,19 +689,60 @@ export default function App() {
     });
   }, []);
 
-  const navigate = useCallback((pg, data = null) => {
-    setNavStack((prev) => [
-      ...prev,
-      { page: pageRef.current, selected: selectedRef.current },
-    ]);
-    setSelected(data);
-    setPage(pg);
-    setShowSearch(false);
-    // After navigating away, the previous page's component unmounts
-    if (typeof gc === "function") {
-      requestIdleCallback(() => gc(), { timeout: 2000 });
-    }
+  const toastTimerRef = useRef(null);
+  const showToast = useCallback((msg) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast(msg);
+    toastTimerRef.current = setTimeout(() => setToast(null), 2500);
   }, []);
+
+  const openCatalogSetup = useCallback(() => {
+    storage.remove(STORAGE_KEYS.METADATA_MODE);
+    setMetadataModeState(null);
+    setApiKey(null);
+  }, []);
+
+  const finishCatalogSetup = useCallback(() => {
+    setCatalogSetupRequired(false);
+    void window.electron?.clearCatalogSetupRequired?.();
+  }, []);
+
+  const useSavedApiKey = useCallback(() => {
+    if (!savedApiKey) return;
+    setMetadataMode("tmdb");
+    setMetadataModeState("tmdb");
+    setApiKey(savedApiKey);
+    setApiKeyStatus("ok");
+    finishCatalogSetup();
+  }, [savedApiKey, finishCatalogSetup]);
+
+  const navigate = useCallback(
+    (pg, data = null) => {
+      if (
+        pg === "movie" &&
+        data &&
+        data.media_type === "movie" &&
+        movieRequiresTmdbApiKey(data, apiKey, isAnimeContent(data, data))
+      ) {
+        showToast(
+          "Movies need a free TMDB key — pick “Continue with TMDB API key” on the setup screen",
+        );
+        return;
+      }
+      setNavStack((prev) => [
+        ...prev,
+        { page: pageRef.current, selected: selectedRef.current },
+      ]);
+      setSelected(data);
+      setPage(pg);
+      setShowSearch(false);
+    // After navigating away, the previous page's component unmounts
+      if (typeof gc === "function") {
+        requestIdleCallback(() => gc(), { timeout: 2000 });
+      }
+    },
+    [showToast, apiKey],
+  );
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   useEffect(() => {
@@ -720,14 +782,6 @@ export default function App() {
     return () => window.removeEventListener("keydown", handler);
   }, [navigateBack]);
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
-  const toastTimerRef = useRef(null);
-  const showToast = useCallback((msg) => {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToast(msg);
-    toastTimerRef.current = setTimeout(() => setToast(null), 2500);
-  }, []);
-
   const getMediaType = useCallback(
     (item) => item.media_type || (item.first_air_date ? "tv" : "movie"),
     [],
@@ -756,17 +810,39 @@ export default function App() {
         return;
       }
       if (
-        (item.media_type === "anilist" || item._anilistOnly) &&
-        apiKey
+        item.media_type === "movie" &&
+        movieRequiresTmdbApiKey(item, apiKey, isAnimeContent(item, item))
       ) {
-        resolveAnilistToTmdb(item, apiKey).then((resolved) => {
-          if (resolved) {
-            navigate("tv", resolved);
-          } else {
-            showToast("Could not match this anime on TMDB — try search");
-          }
-        });
+        showToast(
+          "Movies need a free TMDB key — pick “Continue with TMDB API key” on the setup screen",
+        );
         return;
+      }
+      if (item._source === "tvmaze") {
+        navigate("tv", { ...item, media_type: "tv" });
+        return;
+      }
+      if (item.media_type === "anilist" || item._anilistOnly) {
+        if (isFreeMetadataMode()) {
+          navigate("tv", {
+            ...item,
+            media_type: "tv",
+            id: item.anilistId || item.id,
+            _anilistOnly: true,
+            name: item.title || item.name,
+          });
+          return;
+        }
+        if (apiKey) {
+          resolveAnilistToTmdb(item, apiKey).then((resolved) => {
+            if (resolved) {
+              navigate("tv", resolved);
+            } else {
+              showToast("Could not match this anime on TMDB — try search");
+            }
+          });
+          return;
+        }
       }
       const mediaType =
         item.media_type || (item.first_air_date != null ? "tv" : "movie");
@@ -791,14 +867,36 @@ export default function App() {
   );
 
   const saveApiKey = useCallback((key) => {
+    setMetadataMode("tmdb");
+    setMetadataModeState("tmdb");
     secureStorage.set("apikey", key);
+    setSavedApiKey(key);
     setApiKey(key);
-  }, []);
+    finishCatalogSetup();
+  }, [finishCatalogSetup]);
+
+  const continueFreeCatalog = useCallback(() => {
+    setMetadataMode("free");
+    setMetadataModeState("free");
+    setApiKey(null);
+    setApiKeyStatus("ok");
+    finishCatalogSetup();
+    const cached = storage.get("trendingCache");
+    if (cached?.movies?.length) {
+      setTrending(cached.movies);
+      setTrendingTV(cached.tv || []);
+    } else {
+      storage.remove("trendingCache");
+      setTrending([]);
+      setTrendingTV([]);
+    }
+  }, [finishCatalogSetup]);
 
   const removeApiKey = useCallback(async () => {
     await secureStorage.set("apikey", "");
     setApiKey(null);
-    setSkipped(false);
+    setSavedApiKey(null);
+    setMetadataModeState(getMetadataMode());
     setApiKeyLoaded(true);
     setApiKeyStatus("checking");
   }, []);
@@ -982,13 +1080,18 @@ export default function App() {
     [navigate],
   );
 
-  if (!apiKeyLoaded) return null; // wait for secure storage to resolve
-  if (!apiKey && !skipped)
+  if (!apiKeyLoaded) {
+    return <StartupGate status={bootStatus} />;
+  }
+  if (mustShowCatalogSetup(apiKey, catalogSetupRequired))
     return (
       <>
-        <SetupScreen
-          onSave={saveApiKey}
-          onSkip={() => setSkipped(true)}
+        <CatalogSetup
+          savedApiKey={catalogSetupRequired ? null : savedApiKey}
+          apiKeyStatus={apiKeyStatus}
+          onUseSavedApiKey={useSavedApiKey}
+          onSaveApiKey={saveApiKey}
+          onContinueFree={continueFreeCatalog}
           onOpenDocs={() => setShowDocs(true)}
         />
         {showDocs && (
@@ -1082,7 +1185,10 @@ export default function App() {
                 onMarkUnwatched={markUnwatched}
                 history={history}
                 apiKey={apiKey}
+                hasSavedApiKey={!!savedApiKey}
+                onUseSavedApiKey={useSavedApiKey}
                 onSave={toggleSave}
+                onOpenCatalogSetup={openCatalogSetup}
               />
             )}
             {page === "movie" && selected && (
@@ -1111,6 +1217,8 @@ export default function App() {
                   downloadIntent.tmdbId === selected.id
                 }
                 onDownloadIntentHandled={clearDownloadIntent}
+                onOpenCatalogSetup={openCatalogSetup}
+                freeCatalog={isFreeMetadataMode()}
               />
             )}
             {page === "person" && selected && (
@@ -1174,6 +1282,7 @@ export default function App() {
                 apiKey={apiKey}
                 onChangeApiKey={changeApiKey}
                 onRemoveApiKey={removeApiKey}
+                onOpenCatalogSetup={openCatalogSetup}
                 onOpenDocs={() => setShowDocs(true)}
                 initialSection={selected?.section}
               />

@@ -9,7 +9,7 @@ query {
     media(sort: TRENDING_DESC, type: ANIME, isAdult: false) {
       id
       title { romaji english }
-      coverImage { large }
+      coverImage { extraLarge large medium }
       averageScore
       startDate { year }
       format
@@ -32,7 +32,11 @@ export async function fetchAnilistTrendingAnime() {
       anilistId: m.id,
       title: m.title?.english || m.title?.romaji,
       name: m.title?.romaji,
-      poster_path: m.coverImage?.large,
+      poster_path:
+        m.coverImage?.extraLarge ||
+        m.coverImage?.large ||
+        m.coverImage?.medium ||
+        null,
       vote_average: m.averageScore ? m.averageScore / 10 : 0,
       first_air_date: m.startDate?.year ? `${m.startDate.year}-01-01` : "",
       _anilistOnly: true,

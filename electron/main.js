@@ -19,6 +19,9 @@ const downloadsIpc = require("./ipc/downloads");
 const subtitlesIpc = require("./ipc/subtitles");
 const allmangaIpc = require("./ipc/allmanga");
 const playerIpc = require("./ipc/player");
+const {
+  applyPendingUpdateCleanup,
+} = require("./update/windowsPortable");
 const discordIpc = require("./ipc/discord");
 const { setupSession } = require("./session/setup");
 const { classifyRequestUrl } = require("./session/adblockLists");
@@ -514,12 +517,51 @@ if (!hasLock) {
     }
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
+    if (process.argv.includes("--reset-catalog")) {
+      try {
+        await storageIpc.resetCatalogChooser();
+      } catch (err) {
+        console.error("[reset] failed:", err?.message || err);
+        process.exitCode = 1;
+      }
+      app.quit();
+      return;
+    }
+
+    if (process.argv.includes("--require-catalog-setup")) {
+      try {
+        await storageIpc.prepareCatalogSetupGate();
+        console.log("[boot] Catalog setup gate enabled (preview post-update)");
+      } catch (err) {
+        console.error("[boot] catalog setup gate failed:", err?.message || err);
+      }
+    }
+
     logBoot("app ready");
+    const pendingUpdate = applyPendingUpdateCleanup();
+    if (pendingUpdate) {
+      try {
+        await session.defaultSession.clearCache();
+      } catch {
+        /* ignore */
+      }
+    }
+    try {
+      await storageIpc.applySecretMigrationIfNeeded();
+    } catch (err) {
+      console.error("[migration] secret restore failed:", err?.message || err);
+    }
+    try {
+      await storageIpc.applyV1011ApiKeyResetIfNeeded({
+        hadPendingUpdate: !!pendingUpdate,
+        pendingVersion: pendingUpdate?.version || "",
+      });
+    } catch (err) {
+      console.error("[migration] v1.0.11 reset failed:", err?.message || err);
+    }
+    storageIpc.recordAppVersionSeen();
     createMainWindow();
-    setTimeout(() => {
-      void storageIpc.applySecretMigrationIfNeeded();
-    }, 1500);
     setTimeout(() => {
       discordIpc.discordRpc.setBrowsing().catch(() => {});
     }, 3000);

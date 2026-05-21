@@ -111,10 +111,31 @@ function legacyFileDelete(key) {
   writeStore(store);
 }
 
+const CREDENTIAL_TIMEOUT_MS = 6000;
+
+function withTimeout(promise, ms, fallback = null) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    promise
+      .then((v) => {
+        clearTimeout(timer);
+        resolve(v);
+      })
+      .catch(() => {
+        clearTimeout(timer);
+        resolve(fallback);
+      });
+  });
+}
+
 async function credentialGet(key) {
   if (!keytar) return null;
   try {
-    return await keytar.getPassword(CREDENTIAL_SERVICE, key);
+    return await withTimeout(
+      keytar.getPassword(CREDENTIAL_SERVICE, key),
+      CREDENTIAL_TIMEOUT_MS,
+      null,
+    );
   } catch (e) {
     console.warn("[secure] credential get failed:", e.message);
     return null;
@@ -222,12 +243,122 @@ function getSecureStoreInfo() {
   };
 }
 
-function writeSecretMigration() {
+const V1011_APIKEY_RESET = [1, 0, 11];
+
+function normaliseVersion(v) {
+  const parts = String(v || "")
+    .replace(/^v/i, "")
+    .split(".");
+  while (parts.length < 3) parts.push("0");
+  return parts.slice(0, 3).map((n) => Number(n) || 0);
+}
+
+function semverGte(a, b) {
+  for (let i = 0; i < 3; i++) {
+    if (a[i] > b[i]) return true;
+    if (a[i] < b[i]) return false;
+  }
+  return true;
+}
+
+function semverLt(a, b) {
+  for (let i = 0; i < 3; i++) {
+    if (a[i] < b[i]) return true;
+    if (a[i] > b[i]) return false;
+  }
+  return false;
+}
+
+const migrationsStatePath = () =>
+  path.join(app.getPath("userData"), "migrations-state.json");
+
+const requireCatalogSetupPath = () =>
+  path.join(app.getPath("userData"), "require-catalog-setup.json");
+
+function isCatalogSetupRequired() {
+  try {
+    const data = JSON.parse(
+      fs.readFileSync(requireCatalogSetupPath(), "utf8"),
+    );
+    return !!data.required;
+  } catch {
+    return false;
+  }
+}
+
+function setCatalogSetupRequired(required) {
+  if (!required) {
+    try {
+      fs.unlinkSync(requireCatalogSetupPath());
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+  fs.writeFileSync(
+    requireCatalogSetupPath(),
+    JSON.stringify({ required: true, at: new Date().toISOString() }),
+    { mode: 0o600 },
+  );
+}
+
+/** Clear TMDB key + metadata mode; show chooser on every launch until user picks. */
+async function prepareCatalogSetupGate() {
+  await clearStoredApiKey();
+  await resetCatalogChooser();
+  setCatalogSetupRequired(true);
+}
+
+function loadMigrationsState() {
+  try {
+    return JSON.parse(fs.readFileSync(migrationsStatePath(), "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function saveMigrationsState(state) {
+  fs.writeFileSync(
+    migrationsStatePath(),
+    JSON.stringify(state, null, 2),
+    { mode: 0o600 },
+  );
+}
+
+function stripApiKeyFromSecretMigrationFile() {
+  const mf = migrationPath();
+  if (!fs.existsSync(mf)) return;
+  try {
+    const plain = JSON.parse(fs.readFileSync(mf, "utf8"));
+    if (!plain || typeof plain !== "object") return;
+    delete plain.apikey;
+    if (Object.keys(plain).length === 0) {
+      fs.unlinkSync(mf);
+    } else {
+      fs.writeFileSync(mf, JSON.stringify(plain), { mode: 0o600 });
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+async function clearStoredApiKey() {
+  await secureStoreSet("apikey", "");
+  stripApiKeyFromSecretMigrationFile();
+}
+
+function writeSecretMigration(opts = {}) {
+  const targetVersion = opts?.targetVersion;
+  const omitApiKey =
+    targetVersion &&
+    semverGte(normaliseVersion(targetVersion), V1011_APIKEY_RESET);
+
   try {
     const store = readStore();
     const plain = {};
     for (const [k, raw] of Object.entries(store)) {
       if (!raw) continue;
+      if (omitApiKey && k === "apikey") continue;
       try {
         const val = decryptLegacyValue(raw);
         if (val) plain[k] = val;
@@ -235,6 +366,7 @@ function writeSecretMigration() {
         /* skip */
       }
     }
+    if (omitApiKey) delete plain.apikey;
     if (Object.keys(plain).length > 0) {
       fs.writeFileSync(migrationPath(), JSON.stringify(plain), { mode: 0o600 });
     }
@@ -260,6 +392,8 @@ async function applySecretMigrationIfNeeded() {
       plain = null;
     }
     if (plain) {
+      const state = loadMigrationsState();
+      if (state.v1011ApiKeyCleared) delete plain.apikey;
       for (const [k, v] of Object.entries(plain)) {
         if (v) await secureStoreSet(k, v);
       }
@@ -310,6 +444,15 @@ function shouldRunScheduledBackup(settings) {
 
 function register() {
   ipcMain.handle("get-app-version", () => app.getVersion());
+
+  ipcMain.handle("is-catalog-setup-required", () => ({
+    required: isCatalogSetupRequired(),
+  }));
+
+  ipcMain.handle("clear-catalog-setup-required", () => {
+    setCatalogSetupRequired(false);
+    return { ok: true };
+  });
 
   ipcMain.handle("secure-store-get", async (_, key) => {
     try {
@@ -403,10 +546,90 @@ function register() {
   });
 }
 
+/**
+ * One-time on upgrade to v1.0.11+: remove TMDB key and show catalog chooser again.
+ * Watch history and other AppData are untouched.
+ */
+async function applyV1011ApiKeyResetIfNeeded({
+  hadPendingUpdate = false,
+  pendingVersion = "",
+} = {}) {
+  const state = loadMigrationsState();
+  if (state.v1011ApiKeyCleared) return false;
+
+  const current = normaliseVersion(app.getVersion());
+  if (!semverGte(current, V1011_APIKEY_RESET)) return false;
+
+  const lastRecorded = state.lastRecordedVersion
+    ? normaliseVersion(state.lastRecordedVersion)
+    : null;
+
+  const fromPending =
+    hadPendingUpdate &&
+    semverGte(normaliseVersion(pendingVersion || app.getVersion()), V1011_APIKEY_RESET);
+  const fromUpgrade =
+    lastRecorded && semverLt(lastRecorded, V1011_APIKEY_RESET);
+
+  if (!fromPending && !fromUpgrade) return false;
+
+  await prepareCatalogSetupGate();
+  state.v1011ApiKeyCleared = true;
+  saveMigrationsState(state);
+  console.log(
+    "[migration] v1.0.11 — choose free catalog or enter a new TMDB key",
+  );
+  return true;
+}
+
+function recordAppVersionSeen() {
+  const state = loadMigrationsState();
+  state.lastRecordedVersion = app.getVersion();
+  saveMigrationsState(state);
+}
+
+async function resetCatalogChooser() {
+  const { BrowserWindow } = require("electron");
+
+  const indexPath = path.join(__dirname, "../../dist/index.html");
+  const win = new BrowserWindow({
+    show: false,
+    width: 640,
+    height: 480,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+
+  await new Promise((resolve, reject) => {
+    win.webContents.once("did-finish-load", resolve);
+    win.webContents.once("did-fail-load", (_, code, desc) =>
+      reject(new Error(desc || String(code))),
+    );
+    win.loadFile(indexPath).catch(reject);
+  });
+
+  await win.webContents.executeJavaScript(`
+    (() => {
+      localStorage.removeItem('mov_metadataMode');
+      return true;
+    })()
+  `);
+
+  if (!win.isDestroyed()) win.close();
+  console.log("[reset] Catalog chooser reset — metadata mode cleared");
+}
+
 module.exports = {
   register,
   applySecretMigrationIfNeeded,
+  applyV1011ApiKeyResetIfNeeded,
+  prepareCatalogSetupGate,
+  isCatalogSetupRequired,
+  setCatalogSetupRequired,
+  recordAppVersionSeen,
   writeSecretMigration,
   loadScheduledBackupSettings,
   shouldRunScheduledBackup,
+  resetCatalogChooser,
 };

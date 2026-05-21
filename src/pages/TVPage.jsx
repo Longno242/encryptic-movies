@@ -85,6 +85,7 @@ import {
   updateDiscordPresence,
   clearDiscordPresence,
 } from "../utils/discordPresence";
+import { probeVideoProgress, seekWebviewTo } from "../utils/videoProgressProbe";
 import { fetchAniSkipTimings } from "../utils/aniSkip";
 import {
   fetchTVRating,
@@ -506,6 +507,7 @@ export default function TVPage({
   const lastKnownTimeRef = useRef(0);
   const durationRef = useRef(0); // tracked for AniSkip progress bar markers
   const seekBackCooldownRef = useRef(0);
+  const lastDlTimeSavedRef = useRef(-1);
 
   useEffect(() => {
     let mounted = true;
@@ -906,13 +908,14 @@ export default function TVPage({
     onStuck: onLoadStuck,
   };
 
-  const discordPresenceRef = useRef({ title: "", posterUrl: "" });
-  discordPresenceRef.current = {
-    title: d.name || d.title || "TV Show",
-    posterUrl: imgUrl(d.poster_path) || imgUrl(d.backdrop_path, "w500") || "",
-  };
   const title = d.name || d.title;
   const year = (d.first_air_date || "").slice(0, 4);
+  const discordPresenceRef = useRef({ title: "", posterUrl: "", year: "" });
+  discordPresenceRef.current = {
+    title: title || "TV Show",
+    year: year || "",
+    posterUrl: imgUrl(d.poster_path) || imgUrl(d.backdrop_path, "w500") || "",
+  };
 
   // ── Season list: prefer episode-group > AniList > TMDB ──────────────────
   // tmdbSeasons excludes specials (season 0) (only for AniList)
@@ -1216,6 +1219,7 @@ export default function TVPage({
     lastKnownTimeRef.current = 0;
     seekBackCooldownRef.current = 0;
     durationRef.current = 0;
+    lastDlTimeSavedRef.current = -1;
   }, [currentProgressKey]);
 
   // Show loader instantly when playback starts
@@ -1357,45 +1361,12 @@ export default function TVPage({
     const timer = setTimeout(() => {
       interval = setInterval(async () => {
         try {
-          const wv = webviewRef.current;
-          if (!wv) return;
+          if (document.hidden) return;
 
-          let result;
-          // When the pop-out window is open the main webview shows about:blank
-          // -> query the pip window's webContents directly.
-          if (
-            pipWebContentsIdRef.current != null &&
-            window.electron?.queryVideoProgress
-          ) {
-            result = await window.electron.queryVideoProgress(
-              pipWebContentsIdRef.current,
-            );
-          } else if (progressViaFrames && window.electron?.queryVideoProgress) {
-            result = await window.electron.queryVideoProgress(
-              wv.getWebContentsId(),
-            );
-          } else {
-            result = await wv.executeJavaScript(`
-              (() => {
-                const v = document.querySelector('video')
-                if (!v || !v.duration || v.duration === Infinity || v.paused) return null
-                // Re-attach seek tracker if video element was recreated (e.g. quality change)
-                if (!v._seekTracked) {
-                  v._seekTracked = true
-                  v.addEventListener('seeked', () => {
-                    v._lastUserSeek = Date.now()
-                    v._lastUserSeekTo = v.currentTime
-                  })
-                }
-                return {
-                  currentTime: v.currentTime,
-                  duration: v.duration,
-                  recentUserSeek: v._lastUserSeek ? (Date.now() - v._lastUserSeek < 6000) : false,
-                  lastUserSeekTo: v._lastUserSeekTo ?? null,
-                }
-              })()
-            `);
-          }
+          const result = await probeVideoProgress(webviewRef, {
+            pipWebContentsId: pipWebContentsIdRef.current,
+            progressViaFrames,
+          });
 
           // ── AniSkip logic: runs every tick (only when aniSkipActive) ────
           if (aniSkipActive && result?.currentTime != null) {
@@ -1412,11 +1383,7 @@ export default function TVPage({
               setSkipPrompt(null);
               const endTime = Number(skipTimings[activeSegment].endTime);
               if (Number.isFinite(endTime)) {
-                try {
-                  await wv.executeJavaScript(
-                    `(() => { const v = document.querySelector('video'); if (v) v.currentTime = ${endTime}; })()`,
-                  );
-                } catch {}
+                await seekWebviewTo(webviewRef, endTime);
               }
             } else {
               setSkipPrompt(activeSegment);
@@ -1427,15 +1394,10 @@ export default function TVPage({
           tickCount++;
           if (aniSkipActive && tickCount % 5 !== 0) return;
 
-          if (result && result.duration > 0) {
+          if (result?.duration > 0 && !result.paused) {
             durationRef.current = result.duration;
             const ct = result.currentTime;
 
-            // ── Resolution-change reset detection ──────────────────────────
-            // Videasy resets to 0 on quality change. We only seek back if:
-            // - ct is near zero (≤5s)
-            // - we were well into the video (>30s)
-            // - the user did NOT manually seek in the last 6s
             const now = Date.now();
             if (
               lastKnownTimeRef.current > 30 &&
@@ -1443,23 +1405,12 @@ export default function TVPage({
               !result.recentUserSeek
             ) {
               if (now > seekBackCooldownRef.current) {
-                // First reset: seek back and start cooldown
-                const seekTo = lastKnownTimeRef.current;
                 seekBackCooldownRef.current = now + 8000;
-                try {
-                  await wv.executeJavaScript(`
-                    (() => {
-                      const v = document.querySelector('video')
-                      if (v) v.currentTime = ${seekTo}
-                    })()
-                  `);
-                } catch {}
+                await seekWebviewTo(webviewRef, lastKnownTimeRef.current);
               }
-              // In both cases (first reset or cooldown): skip progress save with wrong position
               return;
             }
 
-            // If user seeked, update ref to their chosen position immediately
             if (result.recentUserSeek && result.lastUserSeekTo !== null) {
               lastKnownTimeRef.current = result.lastUserSeekTo;
             } else {
@@ -1472,14 +1423,21 @@ export default function TVPage({
             updateDiscordPresence({
               title: discordPresenceRef.current.title,
               subtitle: epLabel,
+              year: discordPresenceRef.current.year,
+              season: selectedSeason,
+              episode: selectedEp?.episode_number ?? null,
               posterUrl: discordPresenceRef.current.posterUrl,
               currentTime: ct,
               duration: result.duration,
-              mediaType: "tv",
+              mediaType: isAnime ? "anime" : "tv",
             });
             saveProgressRef.current(currentProgressKey, Math.min(p, 100));
-            // Also persist actual seconds so DownloadsPage can show resume position
-            storage.set("dlTime_" + currentProgressKey, Math.floor(ct));
+
+            const ctFloor = Math.floor(ct);
+            if (Math.abs(ctFloor - lastDlTimeSavedRef.current) >= 3) {
+              lastDlTimeSavedRef.current = ctFloor;
+              storage.set("dlTime_" + currentProgressKey, ctFloor);
+            }
 
             // Auto-mark watched when remaining time ≤ threshold
             const remaining = result.duration - ct;

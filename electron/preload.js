@@ -217,8 +217,11 @@ contextBridge.exposeInMainWorld("electron", {
   // Discord Rich Presence
   setDiscordRpcEnabled: (enabled) =>
     ipcRenderer.invoke("discord-rpc-set-enabled", enabled),
+  setDiscordRpcConfig: (config) =>
+    ipcRenderer.invoke("discord-rpc-set-config", config),
   updateDiscordPresence: (payload) =>
     ipcRenderer.invoke("discord-rpc-update", payload),
   clearDiscordPresence: () => ipcRenderer.invoke("discord-rpc-clear"),
-  setDiscordBrowsing: () => ipcRenderer.invoke("discord-rpc-browsing"),
+  setDiscordBrowsing: (context) =>
+    ipcRenderer.invoke("discord-rpc-browsing", context || {}),
 });

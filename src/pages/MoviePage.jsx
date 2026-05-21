@@ -75,6 +75,8 @@ import {
   updateDiscordPresence,
   clearDiscordPresence,
 } from "../utils/discordPresence";
+import { usePlaybackPoll } from "../hooks/usePlaybackPoll";
+import { probeVideoProgress, seekWebviewTo } from "../utils/videoProgressProbe";
 import {
   ratingFromMovieReleaseDates,
   isRestricted,
@@ -304,9 +306,10 @@ export default function MoviePage({
   const title = d.title || d.name;
   const year = (d.release_date || "").slice(0, 4);
   const mediaName = `${title}${year ? " (" + year + ")" : ""}`;
-  const discordPresenceRef = useRef({ title: "", posterUrl: "" });
+  const discordPresenceRef = useRef({ title: "", posterUrl: "", year: "" });
   discordPresenceRef.current = {
     title: title || "Movie",
+    year: year || "",
     posterUrl: imgUrl(d.poster_path) || imgUrl(d.backdrop_path, "w500") || "",
   };
 
@@ -625,119 +628,71 @@ export default function MoviePage({
     if (playing && playerSource) reportTrying(playerSource);
   }, [playing, playerSource, item.id, reportTrying]);
 
-  // ── Auto-track progress + auto-watched every 5s ──────────────────────────
-  useEffect(() => {
-    if (!playing || !sourceSupportsProgress(playerSource)) return;
-    let interval = null;
-    const timer = setTimeout(() => {
-      interval = setInterval(async () => {
-        try {
-          const wv = webviewRef.current;
-          if (!wv) return;
-          let result;
-          // When the pop-out window is open the main webview shows about:blank
-          // -> query the pip window's webContents directly.
-          if (
-            pipWebContentsIdRef.current != null &&
-            window.electron?.queryVideoProgress
-          ) {
-            result = await window.electron.queryVideoProgress(
-              pipWebContentsIdRef.current,
-            );
-          } else if (progressViaFrames && window.electron?.queryVideoProgress) {
-            result = await window.electron.queryVideoProgress(
-              wv.getWebContentsId(),
-            );
-          } else {
-            result = await wv.executeJavaScript(`
-              (() => {
-                const v = document.querySelector('video')
-                if (!v || !v.duration || v.duration === Infinity || v.paused) return null
-                // Re-attach seek tracker if video element was recreated (e.g. quality change)
-                if (!v._seekTracked) {
-                  v._seekTracked = true
-                  v.addEventListener('seeked', () => {
-                    v._lastUserSeek = Date.now()
-                    v._lastUserSeekTo = v.currentTime
-                  })
-                }
-                return {
-                  currentTime: v.currentTime,
-                  duration: v.duration,
-                  recentUserSeek: v._lastUserSeek ? (Date.now() - v._lastUserSeek < 6000) : false,
-                  lastUserSeekTo: v._lastUserSeekTo ?? null,
-                }
-              })()
-            `);
-          }
-          if (result && result.duration > 0) {
-            const ct = result.currentTime;
+  const lastDlTimeSavedRef = useRef(-1);
 
-            // ── Resolution-change reset detection ──────────────────────────
-            // Videasy resets to 0 on quality change. We only seek back if:
-            // - ct is near zero (≤5s)
-            // - we were well into the video (>30s)
-            // - the user did NOT manually seek in the last 6s
-            const now = Date.now();
-            if (
-              lastKnownTimeRef.current > 30 &&
-              ct <= 5 &&
-              !result.recentUserSeek
-            ) {
-              if (now > seekBackCooldownRef.current) {
-                // First reset: seek back and start cooldown
-                const seekTo = lastKnownTimeRef.current;
-                seekBackCooldownRef.current = now + 8000;
-                try {
-                  await wv.executeJavaScript(`
-                    (() => {
-                      const v = document.querySelector('video')
-                      if (v) v.currentTime = ${seekTo}
-                    })()
-                  `);
-                } catch {}
-              }
-              // In both cases (first reset or cooldown): skip progress save with wrong position
-              return;
-            }
+  const pollMovieProgress = useCallback(async () => {
+    try {
+      const result = await probeVideoProgress(webviewRef, {
+        pipWebContentsId: pipWebContentsIdRef.current,
+        progressViaFrames,
+      });
+      if (!result?.duration || result.duration <= 0 || result.paused) return;
 
-            // If user seeked, update ref to their chosen position immediately
-            if (result.recentUserSeek && result.lastUserSeekTo !== null) {
-              lastKnownTimeRef.current = result.lastUserSeekTo;
-            } else {
-              lastKnownTimeRef.current = ct;
-            }
-            const p = Math.floor((ct / result.duration) * 100);
-            updateDiscordPresence({
-              title: discordPresenceRef.current.title,
-              posterUrl: discordPresenceRef.current.posterUrl,
-              currentTime: ct,
-              duration: result.duration,
-              mediaType: "movie",
-            });
-            saveProgressRef.current(progressKey, Math.min(p, 100));
-            // Also persist actual seconds so DownloadsPage can show resume position
-            storage.set("dlTime_" + progressKey, Math.floor(ct));
+      const ct = result.currentTime;
+      const now = Date.now();
+      if (
+        lastKnownTimeRef.current > 30 &&
+        ct <= 5 &&
+        !result.recentUserSeek
+      ) {
+        if (now > seekBackCooldownRef.current) {
+          seekBackCooldownRef.current = now + 8000;
+          await seekWebviewTo(webviewRef, lastKnownTimeRef.current);
+        }
+        return;
+      }
 
-            // Auto-mark watched when remaining time ≤ threshold
-            const remaining = result.duration - ct;
-            if (
-              !autoMarkedRef.current &&
-              remaining <= watchedThreshold &&
-              remaining >= 0
-            ) {
-              autoMarkedRef.current = true;
-              onMarkWatchedRef.current?.(progressKey);
-            }
-          }
-        } catch {}
-      }, 5000);
-    }, 3000);
-    return () => {
-      clearTimeout(timer);
-      clearInterval(interval);
-    };
-  }, [playing, progressKey, watchedThreshold, playerSource, progressViaFrames]);
+      if (result.recentUserSeek && result.lastUserSeekTo !== null) {
+        lastKnownTimeRef.current = result.lastUserSeekTo;
+      } else {
+        lastKnownTimeRef.current = ct;
+      }
+
+      const p = Math.floor((ct / result.duration) * 100);
+      updateDiscordPresence({
+        title: discordPresenceRef.current.title,
+        year: discordPresenceRef.current.year,
+        posterUrl: discordPresenceRef.current.posterUrl,
+        currentTime: ct,
+        duration: result.duration,
+        mediaType: "movie",
+      });
+      saveProgressRef.current(progressKey, Math.min(p, 100));
+
+      const ctFloor = Math.floor(ct);
+      if (Math.abs(ctFloor - lastDlTimeSavedRef.current) >= 3) {
+        lastDlTimeSavedRef.current = ctFloor;
+        storage.set("dlTime_" + progressKey, ctFloor);
+      }
+
+      const remaining = result.duration - ct;
+      if (
+        !autoMarkedRef.current &&
+        remaining <= watchedThreshold &&
+        remaining >= 0
+      ) {
+        autoMarkedRef.current = true;
+        onMarkWatchedRef.current?.(progressKey);
+      }
+    } catch {}
+  }, [progressKey, watchedThreshold, progressViaFrames]);
+
+  usePlaybackPoll({
+    enabled: playing && sourceSupportsProgress(playerSource),
+    intervalMs: 5000,
+    startDelayMs: 3000,
+    onPoll: pollMovieProgress,
+  });
 
   const handlePlay = useCallback(() => {
     setM3u8Url(null);

@@ -541,7 +541,7 @@ function register(getMainWindow, { writeSecretMigration, getDownloads }) {
       const JS = `
         (() => {
           const v = document.querySelector('video');
-          if (!v || !v.duration || v.duration === Infinity || v.paused) return null;
+          if (!v || !v.duration || v.duration === Infinity) return null;
           if (!v._seekTracked) {
             v._seekTracked = true;
             v.addEventListener('seeked', () => {
@@ -552,6 +552,7 @@ function register(getMainWindow, { writeSecretMigration, getDownloads }) {
           return {
             currentTime: v.currentTime,
             duration: v.duration,
+            paused: !!v.paused,
             recentUserSeek: v._lastUserSeek ? (Date.now() - v._lastUserSeek < 6000) : false,
             lastUserSeekTo: v._lastUserSeekTo ?? null,
           };

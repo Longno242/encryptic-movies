@@ -42,10 +42,12 @@ import {
 import { applySidebarCollapsedFromStorage } from "./utils/sidebarLayout";
 import {
   isDiscordRpcEnabled,
-  syncDiscordRpcEnabled,
+  syncDiscordRpcConfig,
+  setDiscordBrowsing,
 } from "./utils/discordPresence";
 import { bootStep, bootFinish } from "./utils/bootSplash";
 import { resolveAnilistToTmdb } from "./utils/anilistHome";
+import { debounce } from "./utils/debounce";
 
 export default function App() {
   // apiKey loaded async from secure storage (OS keychain)
@@ -119,8 +121,21 @@ export default function App() {
 
   // ── Discord Rich Presence ───────────────────────────────────────────────────
   useEffect(() => {
-    syncDiscordRpcEnabled(isDiscordRpcEnabled());
+    syncDiscordRpcConfig();
   }, []);
+
+  useEffect(() => {
+    if (!isDiscordRpcEnabled()) return;
+    const pushBrowsing = debounce(() => {
+      const viewTitle =
+        selected?.title || selected?.name || selected?.original_title || "";
+      const mediaType =
+        page === "tv" ? "tv" : page === "movie" ? "movie" : undefined;
+      setDiscordBrowsing({ page, viewTitle, mediaType });
+    }, 300);
+    pushBrowsing();
+    return () => pushBrowsing.cancel();
+  }, [page, selected?.id, selected?.title, selected?.name]);
 
   useEffect(() => {
     const stored = storage.get(STORAGE_KEYS.ENCRYPTIC_SHIELD);
@@ -551,15 +566,21 @@ export default function App() {
   // ── Trending, single shared fetch fn avoids code duplication ────────────
   // Results are cached in localStorage for 30 min to avoid redundant API calls
   // and to keep trending data out of RAM between restarts.
-  const fetchTrending = useCallback(() => {
-    if (!apiKey) return;
+  const TRENDING_CACHE_TTL = 30 * 60 * 1000;
+
+  const hydrateTrendingFromCache = useCallback(() => {
     const cached = storage.get("trendingCache");
-    const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
-    if (cached && cached.ts && Date.now() - cached.ts < CACHE_TTL) {
+    if (cached?.ts && Date.now() - cached.ts < TRENDING_CACHE_TTL) {
       setTrending(cached.movies || []);
       setTrendingTV(cached.tv || []);
-      return;
+      return true;
     }
+    return false;
+  }, []);
+
+  const fetchTrending = useCallback(() => {
+    if (!apiKey) return;
+    if (hydrateTrendingFromCache()) return;
     setLoadingHome(true);
     Promise.all([
       tmdbFetch("/trending/movie/week", apiKey),
@@ -574,11 +595,14 @@ export default function App() {
       })
       .catch(() => {})
       .finally(() => setLoadingHome(false));
-  }, [apiKey]);
+  }, [apiKey, hydrateTrendingFromCache]);
 
   useEffect(() => {
+    if (!apiKey) return;
+    if (hydrateTrendingFromCache()) return;
+    if (page !== "home") return;
     fetchTrending();
-  }, [fetchTrending]);
+  }, [apiKey, page, fetchTrending, hydrateTrendingFromCache]);
 
   const retryHome = useCallback(() => {
     if (offline) return;

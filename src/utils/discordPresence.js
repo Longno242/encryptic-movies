@@ -1,16 +1,31 @@
-import { storage } from "./storage";
-import { STORAGE_KEYS } from "./storage";
+import {
+  getDiscordRpcConfig,
+  saveDiscordRpcConfig,
+  isDiscordRpcEnabledFromConfig,
+} from "./discordRpcConfig";
 
 let lastSentAt = 0;
 let lastKey = "";
 
 export function isDiscordRpcEnabled() {
-  const v = storage.get(STORAGE_KEYS.DISCORD_RPC_ENABLED);
-  return v === null || v === undefined || v === true || v === 1 || v === "1";
+  return isDiscordRpcEnabledFromConfig();
+}
+
+export function getDiscordPresenceConfig() {
+  return getDiscordRpcConfig();
+}
+
+export function syncDiscordRpcConfig() {
+  const cfg = getDiscordRpcConfig();
+  window.electron?.setDiscordRpcConfig?.(cfg);
+  window.electron?.setDiscordRpcEnabled?.(!!cfg.enabled);
+  return cfg;
 }
 
 export function syncDiscordRpcEnabled(enabled) {
+  saveDiscordRpcConfig({ enabled: !!enabled });
   window.electron?.setDiscordRpcEnabled?.(!!enabled);
+  window.electron?.setDiscordRpcConfig?.(getDiscordRpcConfig());
 }
 
 export function clearDiscordPresence() {
@@ -19,15 +34,33 @@ export function clearDiscordPresence() {
 }
 
 /**
- * @param {{ title: string, subtitle?: string, posterUrl?: string, currentTime: number, duration: number, mediaType?: 'movie'|'tv' }} opts
+ * @param {{ page?: string, title?: string, viewTitle?: string, mediaType?: string }} context
+ */
+export function setDiscordBrowsing(context = {}) {
+  if (!isDiscordRpcEnabled()) return;
+  window.electron?.setDiscordBrowsing?.(context);
+}
+
+/**
+ * @param {{
+ *   title: string,
+ *   subtitle?: string,
+ *   posterUrl?: string,
+ *   currentTime: number,
+ *   duration: number,
+ *   mediaType?: 'movie'|'tv'|'anime',
+ *   year?: string,
+ *   season?: number,
+ *   episode?: number,
+ * }} opts
  */
 export function updateDiscordPresence(opts) {
   if (!isDiscordRpcEnabled() || !window.electron?.updateDiscordPresence) return;
-  if (!opts?.title) return;
+  if (!opts?.title || opts.paused) return;
 
-  const key = `${opts.title}|${opts.subtitle || ""}|${opts.posterUrl || ""}|${Math.floor(opts.currentTime || 0)}`;
+  const key = `${opts.title}|${opts.subtitle || ""}|${opts.posterUrl || ""}|${Math.floor(opts.currentTime || 0)}|${opts.season ?? ""}|${opts.episode ?? ""}`;
   const now = Date.now();
-  const minGap = key === lastKey ? 12000 : 5000;
+  const minGap = key === lastKey ? 8000 : 4000;
   if (now - lastSentAt < minGap) return;
 
   lastKey = key;
@@ -39,5 +72,8 @@ export function updateDiscordPresence(opts) {
     currentTime: opts.currentTime || 0,
     duration: opts.duration || 0,
     mediaType: opts.mediaType || "movie",
+    year: opts.year || "",
+    season: opts.season ?? null,
+    episode: opts.episode ?? null,
   });
 }

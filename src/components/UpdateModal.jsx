@@ -1,5 +1,6 @@
 /** Mov — app update modal */
 import { useState, useEffect, useRef } from "react";
+import { markDevRetiredNoticeSeen, shouldShowDevRetiredNote } from "../utils/updates";
 
 function openExternal(url) {
   window.electron?.openExternal?.(url);
@@ -421,7 +422,7 @@ export default function UpdateModal({
   onClose,
   onInstalled,
 }) {
-  const { latest, current, url, changelog, assets, isTest } = updateInfo;
+  const { latest, current, url, changelog, assets } = updateInfo;
 
   const [phase, setPhase] = useState("idle"); // idle | downloading | installing | done | error
   const [format, setFormat] = useState(null); // "appimage" | "deb" | "exe" | "dmg" | "dmg_arm64" | null
@@ -470,6 +471,7 @@ export default function UpdateModal({
       });
       if (cancelRef.current) return;
       if (!result.ok) throw new Error(result.error || "Update failed");
+      if (shouldShowDevRetiredNote(current)) markDevRetiredNoticeSeen();
       onInstalled?.();
       setPhase("installing");
       setProgressLabel("Downloading complete — restarting app…");
@@ -485,6 +487,7 @@ export default function UpdateModal({
       cancelRef.current = true;
       window.electron?.cancelUpdate?.();
     }
+    if (shouldShowDevRetiredNote(current)) markDevRetiredNoticeSeen();
     onClose();
   };
 
@@ -555,7 +558,6 @@ export default function UpdateModal({
                   marginBottom: 4,
                 }}
               >
-                <span style={{ fontSize: 20 }}>🎉</span>
                 <span
                   style={{
                     fontFamily: "var(--font-display)",
@@ -563,7 +565,7 @@ export default function UpdateModal({
                     letterSpacing: 1,
                   }}
                 >
-                  {isTest ? "TEST UPDATE" : "UPDATE AVAILABLE"}
+                  UPDATE AVAILABLE
                 </span>
               </div>
               <p

@@ -1218,9 +1218,7 @@ export default function App() {
         {updateBanner && (
           <div className="update-banner-top">
             <span>
-              {updateBanner.isTest
-                ? "🧪 Test: update available"
-                : `🎉 Encryptic Movies v${updateBanner.latest} is available!`}
+              {`Encryptic Movies v${updateBanner.latest} is available!`}
             </span>
             <button
               type="button"

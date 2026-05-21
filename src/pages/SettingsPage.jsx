@@ -17,11 +17,7 @@ import {
 import { DEFAULT_INVIDIOUS_BASE } from "../components/TrailerModal";
 import { RATING_COUNTRIES } from "../utils/ageRating";
 import { WarningIcon } from "../components/Icons";
-import {
-  checkForUpdates,
-  isUpdateTestMode,
-  setUpdateTestMode,
-} from "../utils/updates";
+import { checkForUpdates } from "../utils/updates";
 import { GITHUB_RELEASES_URL } from "../config/github";
 import {
   HOME_ROWS,
@@ -549,9 +545,6 @@ function VersionSection() {
     const stored = storage.get(STORAGE_KEYS.AUTO_CHECK_UPDATES);
     return stored === null || stored === undefined ? true : !!stored;
   });
-  const [testUpdatePrompt, setTestUpdatePrompt] = useState(() =>
-    isUpdateTestMode(),
-  );
   const [autoSaved, setAutoSaved] = useState(false);
   const [currentVersion, setCurrentVersion] = useState("0.0.0");
 
@@ -561,6 +554,8 @@ function VersionSection() {
         setCurrentVersion(v);
       });
     }
+    // Retired public test toggle — clear if a previous build left it on.
+    storage.set(STORAGE_KEYS.UPDATE_TEST_MODE, 0);
   }, []);
 
   const runCheck = async () => {
@@ -579,13 +574,6 @@ function VersionSection() {
   const toggleAuto = (val) => {
     setAutoCheck(val);
     storage.set(STORAGE_KEYS.AUTO_CHECK_UPDATES, val ? 1 : 0);
-    setAutoSaved(true);
-    setTimeout(() => setAutoSaved(false), 1800);
-  };
-
-  const toggleTestUpdate = (val) => {
-    setTestUpdatePrompt(val);
-    setUpdateTestMode(val);
     setAutoSaved(true);
     setTimeout(() => setAutoSaved(false), 1800);
   };
@@ -719,34 +707,6 @@ function VersionSection() {
         )}
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          flexWrap: "wrap",
-          marginTop: 16,
-        }}
-      >
-        <Toggle
-          value={testUpdatePrompt}
-          onChange={toggleTestUpdate}
-          title={
-            testUpdatePrompt
-              ? "Disable test update prompt"
-              : "Enable test update prompt"
-          }
-        />
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}>
-            Test update prompt
-          </div>
-          <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
-            Always show an update on next launch (for testing). Or run{" "}
-            <code style={{ fontSize: 11 }}>npm run start:test-updates</code>.
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

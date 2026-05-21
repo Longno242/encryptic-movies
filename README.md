@@ -4,7 +4,7 @@
 
 Cross-platform Electron desktop app for browsing movies, TV series, and anime. Metadata from [TMDB](https://www.themoviedb.org/) and [AniList](https://anilist.co/); playback uses third-party embed providers in-app.
 
-**Latest:** [v1.0.10](https://github.com/Longno242/encryptic-movies/releases/tag/v1.0.10) — customizable Discord Rich Presence, player performance tuning, and stability fixes.
+**Latest:** [v1.0.11](https://github.com/Longno242/encryptic-movies/releases/tag/v1.0.11) — removed public test-update toggle; dev-retired note in update changelog.
 
 ## Features
 
@@ -75,9 +75,9 @@ Pushing a version tag (`v*`) runs [`.github/workflows/release.yml`](./.github/wo
 
 ```bash
 # After committing on master:
-git tag -a v1.0.10 -m "Encryptic Movies v1.0.10"
+git tag -a v1.0.11 -m "Encryptic Movies v1.0.11"
 git push origin master
-git push origin v1.0.10
+git push origin v1.0.11
 ```
 
 Repo config for update checks: [`github.config.json`](./github.config.json).

@@ -32,6 +32,16 @@ import {
 import { collectBackupData, restoreBackupData } from "../utils/backup";
 import { formatBytes } from "../utils/storage";
 import { resolveStoredDownloadPath } from "../utils/downloadPath";
+import {
+  getDiscordRpcConfig,
+  saveDiscordRpcConfig,
+  previewDiscordPresence,
+  DISCORD_DETAILS_PRESETS,
+  DISCORD_STATE_PRESETS,
+  matchTemplatePreset,
+  resolveTemplatePreset,
+} from "../utils/discordRpcConfig";
+import { syncDiscordRpcConfig } from "../utils/discordPresence";
 
 // ── Custom Select ─────────────────────────────────────────────────────────────
 function SettingsSelect({ value, onChange, options, style }) {
@@ -2942,10 +2952,45 @@ export default function SettingsPage({
   const [introSkipMode, setIntroSkipMode] = useState(
     () => storage.get(STORAGE_KEYS.INTRO_SKIP_MODE) || "off",
   );
-  const [discordRpcEnabled, setDiscordRpcEnabled] = useState(() => {
-    const v = storage.get(STORAGE_KEYS.DISCORD_RPC_ENABLED);
-    return v === null || v === undefined || v === true || v === 1 || v === "1";
+  const [discordCfg, setDiscordCfg] = useState(() => getDiscordRpcConfig());
+  const [discordDetailsPreset, setDiscordDetailsPreset] = useState(() =>
+    matchTemplatePreset(getDiscordRpcConfig().detailsTemplate, DISCORD_DETAILS_PRESETS),
+  );
+  const [discordDetailsCustom, setDiscordDetailsCustom] = useState(() => {
+    const cfg = getDiscordRpcConfig();
+    return matchTemplatePreset(cfg.detailsTemplate, DISCORD_DETAILS_PRESETS) === "custom"
+      ? cfg.detailsTemplate
+      : "";
   });
+  const [discordStatePreset, setDiscordStatePreset] = useState(() =>
+    matchTemplatePreset(getDiscordRpcConfig().stateTemplate, DISCORD_STATE_PRESETS),
+  );
+  const [discordStateCustom, setDiscordStateCustom] = useState(() => {
+    const cfg = getDiscordRpcConfig();
+    return matchTemplatePreset(cfg.stateTemplate, DISCORD_STATE_PRESETS) === "custom"
+      ? cfg.stateTemplate
+      : "";
+  });
+  const [discordStateFallbackPreset, setDiscordStateFallbackPreset] = useState(() =>
+    matchTemplatePreset(
+      getDiscordRpcConfig().stateFallbackTemplate,
+      DISCORD_STATE_PRESETS,
+    ),
+  );
+  const [discordStateFallbackCustom, setDiscordStateFallbackCustom] = useState(() => {
+    const cfg = getDiscordRpcConfig();
+    return matchTemplatePreset(cfg.stateFallbackTemplate, DISCORD_STATE_PRESETS) === "custom"
+      ? cfg.stateFallbackTemplate
+      : "";
+  });
+
+  const applyDiscordCfg = (partial) => {
+    const next = saveDiscordRpcConfig(partial);
+    setDiscordCfg(next);
+    window.electron?.setDiscordRpcConfig?.(next);
+    window.electron?.setDiscordRpcEnabled?.(!!next.enabled);
+    if (!next.enabled) window.electron?.clearDiscordPresence?.();
+  };
   const [saved, setSaved] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetHovered, setResetHovered] = useState(false);
@@ -3607,28 +3652,25 @@ export default function SettingsPage({
                 lineHeight: 1.6,
               }}
             >
-              Shows what you are watching, the movie or show poster, and time
-              remaining in Discord. Requires Discord desktop to be running.
+              Customize what friends see in Discord while you browse or watch.
+              Uses templates, posters, countdown timers, and privacy modes.
+              Requires the Discord desktop app.
             </div>
+
             <div
               style={{
                 display: "flex",
                 alignItems: "center",
                 gap: 12,
                 flexWrap: "wrap",
+                marginBottom: 20,
               }}
             >
               <Toggle
-                value={discordRpcEnabled}
-                onChange={(val) => {
-                  setDiscordRpcEnabled(val);
-                  storage.set(STORAGE_KEYS.DISCORD_RPC_ENABLED, val ? 1 : 0);
-                  window.electron?.setDiscordRpcEnabled?.(val);
-                  if (!val) window.electron?.clearDiscordPresence?.();
-                  else window.electron?.setDiscordBrowsing?.();
-                }}
+                value={discordCfg.enabled}
+                onChange={(val) => applyDiscordCfg({ enabled: val })}
                 title={
-                  discordRpcEnabled
+                  discordCfg.enabled
                     ? "Disable Discord status"
                     : "Enable Discord status"
                 }
@@ -3640,10 +3682,445 @@ export default function SettingsPage({
                   Show activity in Discord
                 </div>
                 <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
-                  Example: Watching Inception · 42 min left
+                  Turn off to hide all presence updates
                 </div>
               </div>
             </div>
+
+            {discordCfg.enabled && (
+              <>
+                {(() => {
+                  const moviePreview = previewDiscordPresence(discordCfg, {
+                    title: "Inception",
+                    year: "2010",
+                    subtitle: "",
+                    mediaType: "movie",
+                    currentTime: 2400,
+                    duration: 5280,
+                  });
+                  const tvPreview = previewDiscordPresence(discordCfg, {
+                    title: "Breaking Bad",
+                    year: "2008",
+                    subtitle: "Season 1 · Episode 3",
+                    mediaType: "tv",
+                    currentTime: 900,
+                    duration: 3600,
+                  });
+                  return (
+                    <div
+                      style={{
+                        background: "var(--surface)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 10,
+                        padding: "14px 16px",
+                        marginBottom: 20,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 600,
+                          letterSpacing: "0.06em",
+                          textTransform: "uppercase",
+                          color: "var(--text3)",
+                          marginBottom: 10,
+                        }}
+                      >
+                        Live preview
+                      </div>
+                      <div style={{ fontSize: 13, color: "var(--text2)" }}>
+                        <div>
+                          <span style={{ color: "var(--text3)" }}>Movie · </span>
+                          <strong style={{ color: "var(--text)" }}>
+                            {moviePreview.details}
+                          </strong>
+                          {moviePreview.state ? (
+                            <span style={{ color: "var(--text3)" }}>
+                              {" "}
+                              · {moviePreview.state}
+                            </span>
+                          ) : null}
+                        </div>
+                        <div style={{ marginTop: 6 }}>
+                          <span style={{ color: "var(--text3)" }}>TV · </span>
+                          <strong style={{ color: "var(--text)" }}>
+                            {tvPreview.details}
+                          </strong>
+                          {tvPreview.state ? (
+                            <span style={{ color: "var(--text3)" }}>
+                              {" "}
+                              · {tvPreview.state}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <div
+                  style={{
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 10,
+                    padding: "0 16px",
+                    marginBottom: 16,
+                  }}
+                >
+                  {[
+                    {
+                      value: "full",
+                      label: "Full details",
+                      desc: "Title, poster, episode info, and timers.",
+                    },
+                    {
+                      value: "private",
+                      label: "Private",
+                      desc: 'Shows "Watching something" — no title or poster.',
+                    },
+                    {
+                      value: "minimal",
+                      label: "Minimal",
+                      desc: "Only app name while watching; generic browsing text.",
+                    },
+                  ].map(({ value, label, desc }, i, arr) => (
+                    <div
+                      key={value}
+                      onClick={() => applyDiscordCfg({ privacy: value })}
+                      style={{
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: 14,
+                        padding: "16px 0",
+                        borderBottom:
+                          i < arr.length - 1 ? "1px solid var(--border)" : "none",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 18,
+                          height: 18,
+                          borderRadius: "50%",
+                          border: `2px solid ${discordCfg.privacy === value ? "var(--red)" : "var(--border)"}`,
+                          background:
+                            discordCfg.privacy === value
+                              ? "var(--red)"
+                              : "transparent",
+                          flexShrink: 0,
+                          marginTop: 1,
+                          boxShadow:
+                            discordCfg.privacy === value
+                              ? "0 0 0 3px rgba(229,9,20,0.18)"
+                              : "none",
+                          transition: "all 0.15s",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        {discordCfg.privacy === value && (
+                          <div
+                            style={{
+                              width: 6,
+                              height: 6,
+                              borderRadius: "50%",
+                              background: "#fff",
+                            }}
+                          />
+                        )}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div
+                          style={{
+                            fontSize: 14,
+                            fontWeight: 500,
+                            color: "var(--text)",
+                          }}
+                        >
+                          {label}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: "var(--text3)",
+                            marginTop: 3,
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          {desc}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {discordCfg.privacy === "full" && (
+                  <>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+                        gap: 10,
+                        marginBottom: 16,
+                      }}
+                    >
+                      {[
+                        ["showPoster", "Show poster art"],
+                        ["showCountdown", "Countdown timer"],
+                        ["showElapsed", "Elapsed time bar"],
+                        ["showProgress", "Progress % in text"],
+                        ["showEpisode", "Episode line for TV"],
+                        ["showYear", "Year in title template"],
+                        ["browsingShowPage", "Page name when browsing"],
+                      ].map(([key, label]) => (
+                        <label
+                          key={key}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            fontSize: 13,
+                            color: "var(--text)",
+                            cursor: "pointer",
+                            padding: "10px 12px",
+                            background: "var(--surface)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 8,
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={discordCfg[key] !== false}
+                            onChange={(e) =>
+                              applyDiscordCfg({ [key]: e.target.checked })
+                            }
+                            style={{ accentColor: "var(--red)" }}
+                          />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+
+                    <div style={{ marginBottom: 14 }}>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: 13,
+                          fontWeight: 500,
+                          color: "var(--text)",
+                          marginBottom: 8,
+                        }}
+                      >
+                        Main line (details)
+                      </label>
+                      <SettingsSelect
+                        value={discordDetailsPreset}
+                        onChange={(val) => {
+                          setDiscordDetailsPreset(val);
+                          if (val !== "custom") {
+                            applyDiscordCfg({
+                              detailsTemplate: resolveTemplatePreset(
+                                val,
+                                DISCORD_DETAILS_PRESETS,
+                                discordDetailsCustom,
+                              ),
+                            });
+                          }
+                        }}
+                        options={DISCORD_DETAILS_PRESETS}
+                        style={{ maxWidth: 360 }}
+                      />
+                      {discordDetailsPreset === "custom" && (
+                        <input
+                          className="input"
+                          value={discordDetailsCustom}
+                          onChange={(e) => {
+                            setDiscordDetailsCustom(e.target.value);
+                            applyDiscordCfg({ detailsTemplate: e.target.value });
+                          }}
+                          placeholder="e.g. ▶ {title} ({year})"
+                          style={{ marginTop: 8, maxWidth: 420 }}
+                        />
+                      )}
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: "var(--text3)",
+                          marginTop: 6,
+                        }}
+                      >
+                        Variables: {"{title}"}, {"{year}"}, {"{mediaLabel}"}
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: 14 }}>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: 13,
+                          fontWeight: 500,
+                          color: "var(--text)",
+                          marginBottom: 8,
+                        }}
+                      >
+                        Second line (with episode info)
+                      </label>
+                      <SettingsSelect
+                        value={discordStatePreset}
+                        onChange={(val) => {
+                          setDiscordStatePreset(val);
+                          if (val !== "custom") {
+                            applyDiscordCfg({
+                              stateTemplate: resolveTemplatePreset(
+                                val,
+                                DISCORD_STATE_PRESETS,
+                                discordStateCustom,
+                              ),
+                            });
+                          }
+                        }}
+                        options={DISCORD_STATE_PRESETS}
+                        style={{ maxWidth: 360 }}
+                      />
+                      {discordStatePreset === "custom" && (
+                        <input
+                          className="input"
+                          value={discordStateCustom}
+                          onChange={(e) => {
+                            setDiscordStateCustom(e.target.value);
+                            applyDiscordCfg({ stateTemplate: e.target.value });
+                          }}
+                          placeholder="e.g. {subtitle} · {timeLeft}"
+                          style={{ marginTop: 8, maxWidth: 420 }}
+                        />
+                      )}
+                    </div>
+
+                    <div style={{ marginBottom: 14 }}>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: 13,
+                          fontWeight: 500,
+                          color: "var(--text)",
+                          marginBottom: 8,
+                        }}
+                      >
+                        Second line (movies / no episode)
+                      </label>
+                      <SettingsSelect
+                        value={discordStateFallbackPreset}
+                        onChange={(val) => {
+                          setDiscordStateFallbackPreset(val);
+                          if (val !== "custom") {
+                            applyDiscordCfg({
+                              stateFallbackTemplate: resolveTemplatePreset(
+                                val,
+                                DISCORD_STATE_PRESETS,
+                                discordStateFallbackCustom,
+                              ),
+                            });
+                          }
+                        }}
+                        options={DISCORD_STATE_PRESETS}
+                        style={{ maxWidth: 360 }}
+                      />
+                      {discordStateFallbackPreset === "custom" && (
+                        <input
+                          className="input"
+                          value={discordStateFallbackCustom}
+                          onChange={(e) => {
+                            setDiscordStateFallbackCustom(e.target.value);
+                            applyDiscordCfg({
+                              stateFallbackTemplate: e.target.value,
+                            });
+                          }}
+                          placeholder="e.g. {progress}% · {timeLeft}"
+                          style={{ marginTop: 8, maxWidth: 420 }}
+                        />
+                      )}
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: "var(--text3)",
+                          marginTop: 6,
+                        }}
+                      >
+                        Variables: {"{subtitle}"}, {"{timeLeft}"}, {"{progress}"}
+                        , {"{seasonEp}"}, {"{elapsed}"}, {"{duration}"}
+                      </div>
+                    </div>
+
+                  </>
+                )}
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 12,
+                    marginBottom: 8,
+                    marginTop: discordCfg.privacy === "full" ? 0 : 4,
+                  }}
+                >
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: 13,
+                        fontWeight: 500,
+                        color: "var(--text)",
+                        marginBottom: 8,
+                      }}
+                    >
+                      Browsing title
+                    </label>
+                    <input
+                      className="input"
+                      value={discordCfg.browsingDetails || ""}
+                      onChange={(e) =>
+                        applyDiscordCfg({ browsingDetails: e.target.value })
+                      }
+                      placeholder="Encryptic Movies"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: 13,
+                        fontWeight: 500,
+                        color: "var(--text)",
+                        marginBottom: 8,
+                      }}
+                    >
+                      Browsing subtitle
+                    </label>
+                    <input
+                      className="input"
+                      value={discordCfg.browsingState || ""}
+                      onChange={(e) =>
+                        applyDiscordCfg({ browsingState: e.target.value })
+                      }
+                      placeholder="{page}"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ marginTop: 8 }}
+                  onClick={() => {
+                    syncDiscordRpcConfig();
+                    window.electron?.setDiscordBrowsing?.({ page: "home" });
+                  }}
+                >
+                  Apply & refresh Discord status
+                </button>
+              </>
+            )}
           </div>
 
           {/* Intro Skip */}

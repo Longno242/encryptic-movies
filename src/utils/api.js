@@ -30,7 +30,9 @@ export const setApiErrorHandlers = (onAuth, onUnreachable) => {
 // ── TMDB in-memory cache + concurrency gate ───────────────────────────────────
 const memoryCache = new Map();
 const CACHE_LIFETIME_MS = 5 * 60 * 1000;
-const MAX_PARALLEL = 12;
+const CACHE_LIFETIME_DETAIL_MS = 15 * 60 * 1000;
+const CACHE_MAX_ENTRIES = 120;
+const MAX_PARALLEL = 10;
 
 let activeRequests = 0;
 const queue = [];
@@ -58,18 +60,37 @@ function readMemoryCache(key) {
   return row.data;
 }
 
-function writeMemoryCache(key, data) {
+function cacheLifetimeForPath(path) {
+  if (
+    /^\/(movie|tv)\/\d+$/.test(path) ||
+    /^\/(movie|tv)\/\d+\/(credits|videos|images|recommendations)$/.test(path)
+  ) {
+    return CACHE_LIFETIME_DETAIL_MS;
+  }
+  return CACHE_LIFETIME_MS;
+}
+
+function pruneMemoryCache() {
+  const now = Date.now();
+  for (const [k, v] of memoryCache) {
+    if (now >= v.expiresAt) memoryCache.delete(k);
+  }
+  if (memoryCache.size <= CACHE_MAX_ENTRIES) return;
+  const sorted = [...memoryCache.entries()].sort(
+    (a, b) => a[1].expiresAt - b[1].expiresAt,
+  );
+  const remove = sorted.length - CACHE_MAX_ENTRIES + 20;
+  for (let i = 0; i < remove && i < sorted.length; i++) {
+    memoryCache.delete(sorted[i][0]);
+  }
+}
+
+function writeMemoryCache(key, data, path) {
   memoryCache.set(key, {
     data,
-    expiresAt: Date.now() + CACHE_LIFETIME_MS,
+    expiresAt: Date.now() + cacheLifetimeForPath(path),
   });
-
-  if (memoryCache.size > 80) {
-    const now = Date.now();
-    for (const [k, v] of memoryCache) {
-      if (now >= v.expiresAt) memoryCache.delete(k);
-    }
-  }
+  pruneMemoryCache();
 }
 
 export const tmdbFetch = async (path, apiKey) => {
@@ -102,7 +123,7 @@ export const tmdbFetch = async (path, apiKey) => {
       if (!response.ok) throw new Error(`TMDB ${response.status}`);
 
       const payload = await response.json();
-      writeMemoryCache(cacheKey, payload);
+      writeMemoryCache(cacheKey, payload, path);
       return payload;
     } finally {
       leaveQueue();

@@ -80,6 +80,7 @@ export const STORAGE_KEYS = {
   NOTIFY_NEW_EPISODE: "notifyNewEpisode",
   INTRO_SKIP_MODE: "introSkipMode",
   DISCORD_RPC_ENABLED: "discordRpcEnabled",
+  DISCORD_RPC_CONFIG: "discordRpcConfig",
   DL_SORT_BY: "dlSortBy",
   DL_SORT_DIR: "dlSortDir",
   DL_SHOW_UNTRACKED: "dlShowUntracked",

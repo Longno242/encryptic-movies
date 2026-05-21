@@ -10,6 +10,9 @@ const https = require("https");
 const http = require("http");
 const os = require("os");
 const { validateMediaFilePath } = require("../security/paths");
+const {
+  applyWindowsPortableUpdate,
+} = require("../update/windowsPortable");
 
 let _updateAbortController = null;
 
@@ -222,7 +225,9 @@ function register(getMainWindow, { writeSecretMigration, getDownloads }) {
     return null;
   });
 
-  ipcMain.handle("download-and-install-update", async (_, { url, format }) => {
+  ipcMain.handle(
+    "download-and-install-update",
+    async (_, { url, format, targetVersion }) => {
     try {
       _updateAbortController = new AbortController();
       const { signal } = _updateAbortController;
@@ -333,7 +338,7 @@ function register(getMainWindow, { writeSecretMigration, getDownloads }) {
         } else {
           spawn(destPath, [], { detached: true, stdio: "ignore" }).unref();
         }
-        writeSecretMigration();
+        writeSecretMigration({ targetVersion });
         app.exit(0);
       } else if (format === "pacman") {
         fs.chmodSync(destPath, 0o644);
@@ -365,7 +370,7 @@ function register(getMainWindow, { writeSecretMigration, getDownloads }) {
           }
         }
         if (launched) {
-          writeSecretMigration();
+          writeSecretMigration({ targetVersion });
           app.relaunch();
           app.exit(0);
         } else {
@@ -397,40 +402,28 @@ function register(getMainWindow, { writeSecretMigration, getDownloads }) {
         }
         if (!launched) shell.openPath(destPath);
       } else if (format === "exe") {
-        const targetExe = process.execPath;
         if (app.isPackaged && process.platform === "win32") {
-          const scriptPath = path.join(
-            os.tmpdir(),
-            `encryptic-update-${Date.now()}.ps1`,
-          );
-          const ps = [
-            "$ErrorActionPreference = 'SilentlyContinue'",
-            `Wait-Process -Id ${process.pid} -ErrorAction SilentlyContinue`,
-            "Start-Sleep -Seconds 2",
-            `$target = '${targetExe.replace(/'/g, "''")}'`,
-            `$new = '${destPath.replace(/'/g, "''")}'`,
-            "if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Force }",
-            "Move-Item -LiteralPath $new -Destination $target -Force",
-            "Start-Process -FilePath $target",
-          ].join("\n");
-          fs.writeFileSync(scriptPath, ps, "utf8");
-          spawn(
-            "powershell.exe",
-            [
-              "-NoProfile",
-              "-ExecutionPolicy",
-              "Bypass",
-              "-WindowStyle",
-              "Hidden",
-              "-File",
-              scriptPath,
-            ],
-            { detached: true, stdio: "ignore", windowsHide: true },
-          ).unref();
-        } else {
-          spawn(destPath, [], { detached: true, stdio: "ignore" }).unref();
+          const sendProgress = (data) => {
+            const mw = getMainWindow();
+            if (mw && !mw.isDestroyed()) {
+              mw.webContents.send("update-progress", data);
+            }
+          };
+          await applyWindowsPortableUpdate({
+            downloadedExe: destPath,
+            targetVersion,
+            writeSecretMigration: () =>
+              writeSecretMigration({ targetVersion }),
+            onProgress: (p) =>
+              sendProgress({
+                percent: p.percent ?? 100,
+                label: p.label ?? "Installing…",
+              }),
+          });
+          return { ok: true };
         }
-        writeSecretMigration();
+        writeSecretMigration({ targetVersion });
+        spawn(destPath, [], { detached: true, stdio: "ignore" }).unref();
         app.exit(0);
       } else if (format === "dmg" || format === "dmg_arm64") {
         // Mount the DMG and open it
@@ -446,7 +439,8 @@ function register(getMainWindow, { writeSecretMigration, getDownloads }) {
     } finally {
       _updateAbortController = null;
     }
-  });
+  },
+  );
 
   ipcMain.handle("cancel-update", () => {
     _updateAbortController?.abort();

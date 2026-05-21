@@ -72,6 +72,9 @@ contextBridge.exposeInMainWorld("electron", {
 
   // App version (from package.json via Electron)
   getAppVersion: () => ipcRenderer.invoke("get-app-version"),
+  isCatalogSetupRequired: () => ipcRenderer.invoke("is-catalog-setup-required"),
+  clearCatalogSetupRequired: () =>
+    ipcRenderer.invoke("clear-catalog-setup-required"),
 
   // Webview fullscreen
   onWebviewEnterFullscreen: (cb) => {

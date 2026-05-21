@@ -2888,6 +2888,7 @@ export default function SettingsPage({
   apiKey,
   onChangeApiKey,
   onRemoveApiKey,
+  onOpenCatalogSetup,
   onOpenDocs,
   initialSection,
 }) {
@@ -3302,6 +3303,15 @@ export default function SettingsPage({
               <button className="btn btn-ghost" onClick={onChangeApiKey}>
                 Change token
               </button>
+              {onOpenCatalogSetup && (
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={onOpenCatalogSetup}
+                >
+                  Change catalog mode
+                </button>
+              )}
               {apiKey && onRemoveApiKey && (
                 <button
                   type="button"

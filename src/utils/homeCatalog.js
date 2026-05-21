@@ -146,11 +146,25 @@ export function saveBrowseYear(year) {
   storage.set("homeBrowseYear", year);
 }
 
-function readCatalogCache() {
+export function loadCachedHomeCatalog() {
   const cached = storage.get(CACHE_KEY);
   if (!cached?.ts || !cached?.data) return null;
   if (Date.now() - cached.ts > CACHE_TTL_MS) return null;
   return dedupeCatalogData(cached.data);
+}
+
+/** TMDB movie catalog from cache even past TTL (free mode fallback). */
+export function loadStaleMovieHomeCatalog() {
+  const cached = storage.get(CACHE_KEY);
+  if (!cached?.data) return null;
+  const data = dedupeCatalogData(cached.data);
+  const sample = data?.inTheaters?.[0] || data?.newReleases?.[0];
+  if (sample?.media_type === "movie") return data;
+  return null;
+}
+
+function readCatalogCache() {
+  return loadCachedHomeCatalog();
 }
 
 function writeCatalogCache(data) {

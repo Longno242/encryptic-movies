@@ -94,6 +94,10 @@ function writeMemoryCache(key, data, path) {
 }
 
 export const tmdbFetch = async (path, apiKey) => {
+  if (!apiKey?.trim()) {
+    throw new Error("TMDB API key required");
+  }
+
   const cacheKey = `${apiKey}|${path}`;
   const hit = readMemoryCache(cacheKey);
   if (hit) return hit;

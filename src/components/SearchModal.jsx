@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { discoverSearch } from "../utils/discoverSearch";
+import { freeDiscoverSearch } from "../utils/freeCatalog";
+import { isFreeMetadataMode } from "../utils/metadataMode";
 import MediaCard from "./MediaCard";
 import { SearchIcon, CloseIcon } from "./Icons";
 import { storage } from "../utils/storage";
@@ -29,8 +31,14 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
     return () => clearTimeout(t);
   }, []);
 
+  const freeMode = isFreeMetadataMode();
+
   useEffect(() => {
-    if (offline || !apiKey) {
+    if (offline) {
+      setResults([]);
+      return;
+    }
+    if (!freeMode && !apiKey) {
       setResults([]);
       return;
     }
@@ -39,14 +47,19 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
     const timer = setTimeout(async () => {
       setLoading(true);
       try {
-        const items = await discoverSearch({
-          apiKey,
-          query,
-          type: type || "",
-          year: year ? Number(year) : undefined,
-          genreId: undefined,
-          minRating: minRating ? Number(minRating) : undefined,
-        });
+        const items = freeMode
+          ? await freeDiscoverSearch({
+              query,
+              type: type === "movie" ? "tv" : type || "",
+            })
+          : await discoverSearch({
+              apiKey,
+              query,
+              type: type || "",
+              year: year ? Number(year) : undefined,
+              genreId: undefined,
+              minRating: minRating ? Number(minRating) : undefined,
+            });
         if (alive) setResults(items);
       } catch {
         if (alive) setResults([]);
@@ -58,7 +71,7 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
       alive = false;
       clearTimeout(timer);
     };
-  }, [query, apiKey, offline, type, year, minRating]);
+  }, [query, apiKey, offline, type, year, minRating, freeMode]);
 
   const pushHistory = useCallback((term) => {
     const trimmed = term.trim();
@@ -111,7 +124,9 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
           <input
             ref={inputRef}
             className="search-input"
-            placeholder="Search movies and series…"
+            placeholder={
+              freeMode ? "Search TV (TVMaze) and anime (AniList)…" : "Search movies and series…"
+            }
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
@@ -136,30 +151,44 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
             onChange={(e) => setType(e.target.value)}
             aria-label="Media type"
           >
-            <option value="">Movies & TV</option>
-            <option value="movie">Movies only</option>
-            <option value="tv">TV only</option>
+            {freeMode ? (
+              <>
+                <option value="">TV & anime</option>
+                <option value="tv">TV only</option>
+                <option value="anime">Anime only</option>
+              </>
+            ) : (
+              <>
+                <option value="">Movies & TV</option>
+                <option value="movie">Movies only</option>
+                <option value="tv">TV only</option>
+              </>
+            )}
           </select>
-          <input
-            type="number"
-            className="search-filters__input"
-            placeholder="Year"
-            min="1900"
-            max="2030"
-            value={year}
-            onChange={(e) => setYear(e.target.value)}
-          />
-          <select
-            className="search-filters__select"
-            value={minRating}
-            onChange={(e) => setMinRating(e.target.value)}
-            aria-label="Minimum rating"
-          >
-            <option value="">Any rating</option>
-            <option value="6">6+</option>
-            <option value="7">7+</option>
-            <option value="8">8+</option>
-          </select>
+          {!freeMode && (
+            <>
+              <input
+                type="number"
+                className="search-filters__input"
+                placeholder="Year"
+                min="1900"
+                max="2030"
+                value={year}
+                onChange={(e) => setYear(e.target.value)}
+              />
+              <select
+                className="search-filters__select"
+                value={minRating}
+                onChange={(e) => setMinRating(e.target.value)}
+                aria-label="Minimum rating"
+              >
+                <option value="">Any rating</option>
+                <option value="6">6+</option>
+                <option value="7">7+</option>
+                <option value="8">8+</option>
+              </select>
+            </>
+          )}
         </div>
 
         <div className="search-results">

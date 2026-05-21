@@ -83,6 +83,7 @@ import {
   getAgeLimitSetting,
   getRatingCountry,
 } from "../utils/ageRating";
+import { movieRequiresTmdbApiKey } from "../utils/metadataMode";
 
 export default function MoviePage({
   item,
@@ -104,6 +105,8 @@ export default function MoviePage({
   onSelectPerson,
   downloadOnMount = false,
   onDownloadIntentHandled,
+  onOpenCatalogSetup,
+  freeCatalog = false,
 }) {
   const [details, setDetails] = useState(null);
   const [playing, setPlaying] = useState(false);
@@ -154,6 +157,8 @@ export default function MoviePage({
     () => isAnimeContent(item, details),
     [item.id, details],
   );
+  const moviesNeedTmdb = movieRequiresTmdbApiKey(item, apiKey, isAnime);
+  const limitedMovieInfo = freeCatalog && !apiKey && !moviesNeedTmdb && !isAnime;
   const [downloaderFolder, setDownloaderFolder] = useState(
     () => storage.get("downloaderFolder") || "",
   );
@@ -356,6 +361,12 @@ export default function MoviePage({
     let mounted = true;
     setMovieCredits(null);
     setTrailerKey(null);
+    if (!apiKey) {
+      setDetails(item);
+      return () => {
+        mounted = false;
+      };
+    }
     tmdbFetch(
       `/movie/${item.id}?append_to_response=release_dates,videos,credits`,
       apiKey,
@@ -380,12 +391,12 @@ export default function MoviePage({
     return () => {
       mounted = false;
     };
-  }, [item.id, apiKey, ratingCountry]);
+  }, [item.id, apiKey, ratingCountry, item]);
 
   // Fetch movie collection (sequels/prequels)
   useEffect(() => {
     setCollection(null);
-    if (!details?.belongs_to_collection?.id) return;
+    if (!apiKey || !details?.belongs_to_collection?.id) return;
     let mounted = true;
     tmdbFetch(`/collection/${details.belongs_to_collection.id}`, apiKey)
       .then((data) => {
@@ -874,6 +885,19 @@ export default function MoviePage({
               </div>
             )}
             <p className="detail-overview">{displayOverview}</p>
+            {limitedMovieInfo && (
+              <p
+                style={{
+                  margin: "0 0 12px",
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                  color: "var(--text3)",
+                }}
+              >
+                Playing from your library without a TMDB key — add one for full
+                details, cast, and movie browse.
+              </p>
+            )}
             <TitleNotes mediaType="movie" id={item.id} />
             {!isWatched && displayPct > 0 && (
               <div className="progress-bar-row" style={{ marginBottom: 12 }}>
@@ -889,7 +913,59 @@ export default function MoviePage({
               </div>
             )}
             <div className="detail-actions">
-              {isUnreleased ? (
+              {moviesNeedTmdb && !isAnime ? (
+                <>
+                  <p
+                    style={{
+                      margin: "0 0 12px",
+                      fontSize: 13,
+                      lineHeight: 1.55,
+                      color: "var(--text2)",
+                      maxWidth: 520,
+                    }}
+                  >
+                    Movies need a free TMDB API key to browse and discover new
+                    titles. TV and anime work without one. Get a token at{" "}
+                    <a
+                      href="https://www.themoviedb.org/settings/api"
+                      className="apikey-link"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        window.electron?.openExternal?.(
+                          "https://www.themoviedb.org/settings/api",
+                        );
+                      }}
+                    >
+                      themoviedb.org
+                    </a>
+                    .
+                  </p>
+                  {onOpenCatalogSetup ? (
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={onOpenCatalogSetup}
+                    >
+                      Set up TMDB API key
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={() => onSettings?.("content")}
+                    >
+                      Add TMDB key in Settings
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={onBack}
+                  >
+                    <BackIcon /> Back
+                  </button>
+                </>
+              ) : isUnreleased ? (
                 <button
                   className="btn btn-primary btn-restricted"
                   disabled
@@ -988,7 +1064,7 @@ export default function MoviePage({
         </div>
       </div>
 
-      {playing && !restricted && !isUnreleased && (
+      {playing && !restricted && !isUnreleased && !(moviesNeedTmdb && !isAnime) && (
         <div className="section section--player-active">
           {isAnime && !playerFullscreen && (
             <AnimeIssuesBanner variant="player" />

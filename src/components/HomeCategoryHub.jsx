@@ -5,6 +5,7 @@ import {
   saveBrowseYear,
   getCategoryMeta,
 } from "../utils/homeCatalog";
+import { FREE_SPOTLIGHT_LABELS } from "../utils/freeCatalog";
 
 export default function HomeCategoryHub({
   browseYear,
@@ -13,6 +14,7 @@ export default function HomeCategoryHub({
   onCategoryChange,
   onShowAll,
   showAllRows,
+  freeCatalog = false,
 }) {
   const years = useMemo(() => {
     const current = new Date().getFullYear();
@@ -25,7 +27,6 @@ export default function HomeCategoryHub({
 
   const pick = (id) => {
     onCategoryChange(id);
-    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const activeMeta = activeCategory ? getCategoryMeta(activeCategory) : null;
@@ -36,33 +37,36 @@ export default function HomeCategoryHub({
         <div>
           <h2 className="category-hub__title">Explore</h2>
           <p className="category-hub__subtitle">
-            Charts & collections from TMDB — the same film database used across
-            the industry
+            {freeCatalog
+              ? "Series picks from TVMaze — tap a category to browse. Add a TMDB key for movies."
+              : "Charts & collections from TMDB — the same film database used across the industry"}
           </p>
         </div>
-        <div className="category-hub__year-wrap">
-          <label className="category-hub__year-label" htmlFor="browse-year">
-            Year
-          </label>
-          <select
-            id="browse-year"
-            className="category-hub__year-select"
-            value={browseYear}
-            onChange={(e) => {
-              const val =
-                e.target.value === "all" ? "all" : Number(e.target.value);
-              saveBrowseYear(val);
-              onYearChange(val);
-              onCategoryChange("byYear");
-            }}
-          >
-            {years.map((y) => (
-              <option key={y.value} value={y.value}>
-                {y.label}
-              </option>
-            ))}
-          </select>
-        </div>
+        {!freeCatalog && (
+          <div className="category-hub__year-wrap">
+            <label className="category-hub__year-label" htmlFor="browse-year">
+              Year
+            </label>
+            <select
+              id="browse-year"
+              className="category-hub__year-select"
+              value={browseYear}
+              onChange={(e) => {
+                const val =
+                  e.target.value === "all" ? "all" : Number(e.target.value);
+                saveBrowseYear(val);
+                onYearChange(val);
+                onCategoryChange("byYear");
+              }}
+            >
+              {years.map((y) => (
+                <option key={y.value} value={y.value}>
+                  {y.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {!showAllRows && activeMeta && (
@@ -92,6 +96,7 @@ export default function HomeCategoryHub({
             <span className="category-card__blurb">{c.blurb}</span>
           </button>
         ))}
+        {!freeCatalog && (
         <button
           type="button"
           className={`category-card category-card--year${!showAllRows && activeCategory === "byYear" ? " category-card--active" : ""}`}
@@ -103,6 +108,7 @@ export default function HomeCategoryHub({
             {browseYear === "all" ? "All years" : browseYear}
           </span>
         </button>
+        )}
       </div>
 
       <p className="category-hub__section-label">Genres</p>

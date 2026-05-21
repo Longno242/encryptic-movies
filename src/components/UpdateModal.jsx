@@ -468,6 +468,7 @@ export default function UpdateModal({
       const result = await window.electron.downloadAndInstallUpdate({
         url: assetUrl,
         format,
+        targetVersion: latest,
       });
       if (cancelRef.current) return;
       if (!result.ok) throw new Error(result.error || "Update failed");

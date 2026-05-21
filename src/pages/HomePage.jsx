@@ -16,6 +16,8 @@ import BrowseRowSkeleton from "../components/BrowseRowSkeleton";
 import {
   fetchHomeCatalog,
   fetchMoviesByYear,
+  loadCachedHomeCatalog,
+  loadStaleMovieHomeCatalog,
   loadBrowseYear,
   getCategoryItems,
   getCategoryMeta,
@@ -23,6 +25,11 @@ import {
   itemsForHomeRatings,
   GENRE_CATEGORIES,
 } from "../utils/homeCatalog";
+import { isFreeMetadataMode } from "../utils/metadataMode";
+import {
+  fetchFreeHomeCatalog,
+  FREE_SPOTLIGHT_LABELS,
+} from "../utils/freeCatalog";
 
 function getRecentHistoryItem(history) {
   if (!history || history.length === 0) return null;
@@ -59,7 +66,12 @@ export default function HomePage({
   history,
   apiKey,
   onSave,
+  onOpenCatalogSetup,
+  hasSavedApiKey = false,
+  onUseSavedApiKey,
 }) {
+  const freeCatalog = isFreeMetadataMode();
+  const freeTvBrowse = freeCatalog && !apiKey;
   const [similarItems, setSimilarItems] = useState([]);
   const [similarSource, setSimilarSource] = useState(null);
   const [topRatedItems, setTopRatedItems] = useState([]);
@@ -77,7 +89,31 @@ export default function HomePage({
   const [viewMode] = useState(() => loadHomeViewMode());
 
   useEffect(() => {
-    if (!apiKey || offline) return;
+    if (offline) return;
+    if (!apiKey) {
+      const cached =
+        loadCachedHomeCatalog() || loadStaleMovieHomeCatalog();
+      if (cached) {
+        setCatalog(cached);
+        return;
+      }
+      if (!freeTvBrowse) return;
+      let cancelled = false;
+      setCatalogLoading(true);
+      fetchFreeHomeCatalog()
+        .then((full) => {
+          if (!cancelled) setCatalog(full);
+        })
+        .catch(() => {
+          if (!cancelled) setCatalog(null);
+        })
+        .finally(() => {
+          if (!cancelled) setCatalogLoading(false);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
     let cancelled = false;
     setCatalogLoading(true);
     const run = () => {
@@ -106,7 +142,7 @@ export default function HomePage({
       if (typeof cancelIdleCallback === "function") cancelIdleCallback(idle);
       else clearTimeout(idle);
     };
-  }, [apiKey, offline]);
+  }, [apiKey, offline, freeTvBrowse]);
 
   useEffect(() => {
     if (!apiKey || offline) return;
@@ -308,9 +344,19 @@ export default function HomePage({
         return { title: "Trending Movies", items: trendingMovieItems };
       case "trendingTV":
         return { title: "Trending Series", items: trendingTVItems };
-      case "topRated":
-        return { title: "Top Rated", items: topRatedItems };
+      case "topRated": {
+        const catalogTop = getCategoryItems(catalog, byYearItems, "topRated");
+        const items = topRatedItems.length ? topRatedItems : catalogTop;
+        return {
+          title: freeTvBrowse ? "Top Rated Series" : "Top Rated",
+          items,
+        };
+      }
       default: {
+        const freeLabel = freeTvBrowse ? FREE_SPOTLIGHT_LABELS[id] : null;
+        if (freeLabel && itemsFromCatalog?.length) {
+          return { title: freeLabel.label, items: itemsFromCatalog };
+        }
         const meta = getCategoryMeta(id);
         if (meta && itemsFromCatalog?.length) {
           return { title: meta.label, items: itemsFromCatalog };
@@ -327,7 +373,17 @@ export default function HomePage({
   const focusedCategory = useMemo(() => {
     if (!activeCategory || showAllRows) return null;
     return getRowMeta(activeCategory);
-  }, [activeCategory, showAllRows, catalog, byYearItems, browseYear, trendingMovieItems, trendingTVItems, topRatedItems]);
+  }, [
+    activeCategory,
+    showAllRows,
+    catalog,
+    byYearItems,
+    browseYear,
+    trendingMovieItems,
+    trendingTVItems,
+    topRatedItems,
+    freeTvBrowse,
+  ]);
 
   const handleSelectWithFx = useCallback(
     (item, cardKey) => {
@@ -390,18 +446,33 @@ export default function HomePage({
     return progress[pk] || 0;
   }, [resumeItem, progress]);
 
-  const featuredHero = trending[0];
+  const featuredHero = trending[0] || trendingTV[0] || animeTrending[0];
 
-  const focusCategory = useCallback((id) => {
-    setActiveCategory(id);
-    setShowAllRows(false);
+  const scrollToCategoryRow = useCallback((id) => {
+    if (!id) return;
     requestAnimationFrame(() => {
-      document.querySelector(".category-hub")?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
+      window.setTimeout(() => {
+        const resolved = resolveCategoryId(id);
+        const target =
+          document.getElementById(`home-row-${resolved}`) ||
+          document.getElementById(`home-row-focus-${id}`) ||
+          document.getElementById("home-category-focus");
+        target?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 120);
     });
   }, []);
+
+  const focusCategory = useCallback(
+    (id) => {
+      setActiveCategory(id);
+      const items = getCategoryItems(catalog, byYearItems, id);
+      if (!items?.length) {
+        setShowAllRows(false);
+      }
+      scrollToCategoryRow(id);
+    },
+    [catalog, byYearItems, scrollToCategoryRow],
+  );
 
   const handleRowSeeAll = useCallback(
     (rowId) => {
@@ -470,6 +541,56 @@ export default function HomePage({
 
   return (
     <div className="fade-in home-page home-page--modern">
+      {freeTvBrowse && !offline && (
+        <div
+          style={{
+            margin: "0 0 16px",
+            padding: "14px 16px",
+            borderRadius: 10,
+            border: "1px solid var(--border)",
+            background: "var(--surface)",
+            fontSize: 13,
+            lineHeight: 1.55,
+            color: "var(--text2)",
+          }}
+        >
+          {hasSavedApiKey && onUseSavedApiKey ? (
+            <>
+              <strong style={{ color: "var(--text)" }}>
+                Want the full home back?
+              </strong>{" "}
+              New Releases, Trending Movies, and genre rows need your saved TMDB
+              key.
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ display: "block", width: "100%", marginTop: 12 }}
+                onClick={onUseSavedApiKey}
+              >
+                Restore full movie library
+              </button>
+            </>
+          ) : (
+            <>
+              <strong style={{ color: "var(--text)" }}>Free catalog mode</strong> —
+              browsing TV and anime. Rows below are series picks unless you add a
+              free{" "}
+              {onOpenCatalogSetup ? (
+                <button
+                  type="button"
+                  className="apikey-link apikey-link-btn"
+                  onClick={onOpenCatalogSetup}
+                >
+                  TMDB API key
+                </button>
+              ) : (
+                "TMDB API key"
+              )}{" "}
+              for movies.
+            </>
+          )}
+        </div>
+      )}
       {!offline && <AnimeIssuesBanner variant="home" />}
       {offline && (
         <div className="home-offline">
@@ -613,15 +734,13 @@ export default function HomePage({
           browseYear={browseYear}
           onYearChange={setBrowseYear}
           activeCategory={activeCategory}
-          onCategoryChange={(id) => {
-            setActiveCategory(id);
-            setShowAllRows(false);
-          }}
+          onCategoryChange={(id) => focusCategory(id)}
           onShowAll={() => {
             setShowAllRows(true);
             setActiveCategory(null);
           }}
           showAllRows={showAllRows}
+          freeCatalog={freeTvBrowse}
         />
       )}
 
@@ -633,8 +752,14 @@ export default function HomePage({
         </>
       )}
 
+      {activeCategory && !showAllRows && catalogLoading && (
+        <div id="home-category-focus" className="home-category-focus">
+          <BrowseRowSkeleton count={8} rowIndex={0} />
+        </div>
+      )}
+
       {focusedCategory && focusedCategory.items?.length > 0 && (
-        <div className="home-category-focus">
+        <div id="home-category-focus" className="home-category-focus">
           {renderRow(
             `focus-${activeCategory}`,
             focusedCategory.title,
@@ -643,9 +768,10 @@ export default function HomePage({
         </div>
       )}
 
-      {focusedCategory && !focusedCategory.items?.length && (
-        <p className="home-category-empty">
-          No titles found in this category. Try another genre or year.
+      {focusedCategory && !focusedCategory.items?.length && !catalogLoading && (
+        <p id="home-category-focus" className="home-category-empty">
+          No titles in this category yet. Try another spotlight or genre, or add a
+          TMDB key for movie rows.
         </p>
       )}
 

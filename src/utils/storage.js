@@ -64,6 +64,7 @@ export const STORAGE_KEYS = {
   AUTO_CHECK_UPDATES: "autoCheckUpdates",
   UPDATE_TEST_MODE: "updateTestMode",
   DISMISSED_UPDATE_VERSION: "dismissedUpdateVersion",
+  DEV_RETIRED_NOTICE_SEEN: "devRetiredNoticeSeen",
   SIDEBAR_COLLAPSED: "sidebarCollapsed",
   INVIDIOUS_BASE: "invidiousBase",
   SUBTITLE_ENABLED: "subtitleDownload",

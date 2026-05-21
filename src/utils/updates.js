@@ -25,6 +25,26 @@ export function semverGt(a, b) {
   return false;
 }
 
+/** Shown once in the update changelog for users on v1.0.10 and earlier. */
+export const DEV_RETIRED_UPDATE_NOTE =
+  '🎬 **Oops — dev item retired.** A "Test update prompt" switch briefly lived in public Settings like an extra in a post-credits scene nobody asked for. It has been removed. No more fake "update available" ambushes — only real releases from GitHub from here on. Sorry for the plot twist.';
+
+export function shouldShowDevRetiredNote(current) {
+  if (storage.get(STORAGE_KEYS.DEV_RETIRED_NOTICE_SEEN)) return false;
+  const cur = normaliseVersion(current);
+  return !semverGt(cur, [1, 0, 10]);
+}
+
+export function markDevRetiredNoticeSeen() {
+  storage.set(STORAGE_KEYS.DEV_RETIRED_NOTICE_SEEN, 1);
+}
+
+function prependDevRetiredNote(changelog, current) {
+  if (!shouldShowDevRetiredNote(current)) return changelog || "";
+  const body = (changelog || "").trim();
+  return body ? `${DEV_RETIRED_UPDATE_NOTE}\n\n---\n\n${body}` : DEV_RETIRED_UPDATE_NOTE;
+}
+
 export function isUpdateTestMode() {
   if (import.meta.env.VITE_UPDATE_TEST_MODE === "true") return true;
   const flag = storage.get(STORAGE_KEYS.UPDATE_TEST_MODE);
@@ -136,11 +156,7 @@ function buildTestUpdatePayload(current, release) {
     latest: fakeLatest,
     current,
     url: release?.url || GITHUB_LATEST_RELEASE_URL,
-    changelog:
-      (release?.changelog
-        ? `${release.changelog}\n\n---\n\n`
-        : "") +
-      "**Update test mode** — simulates a newer version. Use `npm run start:test-updates` or enable *Test update prompt* in Settings.",
+    changelog: prependDevRetiredNote(release?.changelog || "", current),
     assets: release?.assets || {},
     hasUpdate: true,
     isTest: true,
@@ -181,11 +197,16 @@ export async function checkForUpdates() {
   const latestParts = normaliseVersion(release.latest);
   const currentParts = normaliseVersion(current);
 
+  const hasUpdate =
+    release.latest !== "" && semverGt(latestParts, currentParts);
+
   return {
     ...release,
     current,
-    hasUpdate:
-      release.latest !== "" && semverGt(latestParts, currentParts),
+    changelog: hasUpdate
+      ? prependDevRetiredNote(release.changelog, current)
+      : release.changelog,
+    hasUpdate,
     isTest: false,
   };
 }

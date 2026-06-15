@@ -1760,6 +1760,50 @@ html[data-player-fullscreen] .page--player-fs .section--player-active {
     animation: slideUp 0.3s ease;
 }
 
+.toast--action {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 14px 12px 18px;
+    max-width: min(480px, calc(100vw - var(--sidebar) - 48px));
+}
+
+.toast__message {
+    flex: 1;
+    min-width: 0;
+    line-height: 1.4;
+}
+
+.toast__action {
+    flex-shrink: 0;
+    padding: 7px 14px;
+    border-radius: 8px;
+    border: 1px solid color-mix(in srgb, var(--red) 45%, var(--border));
+    background: color-mix(in srgb, var(--red) 12%, var(--surface));
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.toast__action:hover {
+    background: color-mix(in srgb, var(--red) 22%, var(--surface));
+}
+
+.dl-card-active--queued {
+    opacity: 0.92;
+}
+
+.dl-card-active--queued .dl-card__bar-fill {
+    background: var(--text3);
+    animation: none;
+}
+
+.dl-status--queued {
+    color: var(--text3);
+}
+
 @keyframes slideUp {
     from {
         opacity: 0;

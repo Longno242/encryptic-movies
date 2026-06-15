@@ -15,6 +15,7 @@ import { imgUrl } from "../utils/api";
 
 const STATUS_CLASS = {
   downloading: "dl-status--downloading",
+  queued: "dl-status--queued",
   completed: "dl-status--completed",
   error: "dl-status--error",
   interrupted: "dl-status--interrupted",
@@ -22,6 +23,7 @@ const STATUS_CLASS = {
 
 const STATUS_LABEL = {
   downloading: "Downloading",
+  queued: "Queued",
   completed: "Completed",
   error: "Error",
   interrupted: "Interrupted",
@@ -194,7 +196,10 @@ export default function DownloadsPage({
 
   // ── Stable derived lists ──────────────────────────────────────
   const active = useMemo(
-    () => downloads.filter((d) => d.status === "downloading"),
+    () =>
+      downloads.filter(
+        (d) => d.status === "downloading" || d.status === "queued",
+      ),
     [downloads],
   );
 
@@ -673,9 +678,10 @@ export default function DownloadsPage({
 
 // ── Active download card ───────────────────────────────────────────────────────
 const ActiveCard = memo(function ActiveCard({ dl, onDelete, onSelect }) {
-  const pct = dl.progress || 0;
+  const isQueued = dl.status === "queued";
+  const pct = isQueued ? 0 : dl.progress || 0;
   return (
-    <div className="dl-card dl-card-active">
+    <div className={`dl-card dl-card-active${isQueued ? " dl-card-active--queued" : ""}`}>
       <div className="dl-card__header">
         <Poster posterPath={dl.posterPath} size={42} />
         <div className="dl-card__info">
@@ -727,7 +733,9 @@ const ActiveCard = memo(function ActiveCard({ dl, onDelete, onSelect }) {
           </div>
         </div>
         <div className="dl-card__right">
-          <div className="dl-card__pct">{pct.toFixed(1)}%</div>
+          <div className="dl-card__pct">
+            {isQueued ? "Queued" : `${pct.toFixed(1)}%`}
+          </div>
           <button className="icon-btn" onClick={onDelete} title="Remove">
             <TrashIcon />
           </button>

@@ -4,7 +4,7 @@ import MediaBrowseRow from "../components/MediaBrowseRow";
 import TrendingCarousel from "../components/TrendingCarousel";
 import HomeCategoryHub from "../components/HomeCategoryHub";
 import { buildDedupedRows } from "../utils/catalogDedupe";
-import { PlayIcon, StarIcon } from "../components/Icons";
+import { PlayIcon, StarIcon, SearchIcon } from "../components/Icons";
 import { imgUrl, tmdbFetch } from "../utils/api";
 import { useRatings, getRatingForItem } from "../utils/useRatings";
 import { isRestricted } from "../utils/ageRating";
@@ -69,6 +69,7 @@ export default function HomePage({
   onOpenCatalogSetup,
   hasSavedApiKey = false,
   onUseSavedApiKey,
+  onSearch,
 }) {
   const freeCatalog = isFreeMetadataMode();
   const freeTvBrowse = freeCatalog && !apiKey;
@@ -446,6 +447,16 @@ export default function HomePage({
     return progress[pk] || 0;
   }, [resumeItem, progress]);
 
+  const continueKey = (item) =>
+    `${item.media_type}_${item.id}_${item.season ?? ""}_${item.episode ?? ""}`;
+
+  const continueItems = useMemo(() => {
+    if (!inProgress?.length) return [];
+    if (!resumeItem) return inProgress;
+    const resumeKey = continueKey(resumeItem);
+    return inProgress.filter((item) => continueKey(item) !== resumeKey);
+  }, [inProgress, resumeItem]);
+
   const featuredHero = trending[0] || trendingTV[0] || animeTrending[0];
 
   const scrollToCategoryRow = useCallback((id) => {
@@ -591,6 +602,20 @@ export default function HomePage({
           )}
         </div>
       )}
+      {!offline && onSearch && (
+        <button
+          type="button"
+          className="home-search-prompt"
+          onClick={onSearch}
+          aria-label="Search movies, TV, and anime (Ctrl+F)"
+        >
+          <SearchIcon />
+          <span className="home-search-prompt__text">
+            Search movies, TV, and anime…
+          </span>
+          <kbd className="home-search-prompt__key">Ctrl+F</kbd>
+        </button>
+      )}
       {!offline && <AnimeIssuesBanner variant="home" />}
       {offline && (
         <div className="home-offline">
@@ -667,14 +692,14 @@ export default function HomePage({
         </div>
       )}
 
-      {rowVisible.continue && inProgress.length > 0 && !offline && (
+      {rowVisible.continue && continueItems.length > 0 && !offline && (
         <div className="home-continue-section">
           {useModernRows ? (
             <MediaBrowseRow
               rowId="continue"
               title={resumeItem ? "More in progress" : "Continue Watching"}
               titleHighlight={null}
-              items={inProgress.map((item) => ({
+              items={continueItems.map((item) => ({
                 ...item,
                 media_type: item.media_type || "movie",
               }))}
@@ -692,7 +717,7 @@ export default function HomePage({
             <div key="continue" id="home-row-continue" className="section home-row">
               <div className="section-title">Continue Watching</div>
               <div className="cards-grid">
-                {inProgress.map((item) => {
+                {continueItems.map((item) => {
                   const pk =
                     item.media_type === "movie"
                       ? `movie_${item.id}`
@@ -712,7 +737,7 @@ export default function HomePage({
                       restricted={restr}
                       modern
                       showQuickActions={false}
-                      staggerIndex={inProgress.indexOf(item)}
+                      staggerIndex={continueItems.indexOf(item)}
                       onQuickSave={onSave}
                     />
                   );

@@ -12,7 +12,7 @@ export const ISSUE_SECTIONS = [
     id: "fixed",
     title: "Recently fixed",
     description:
-      "Addressed in v1.0.12 and recent updates. If something still fails, treat it as active and try another source or add a TMDB key.",
+      "Addressed in v1.0.13 and recent updates. If something still fails, treat it as active and try another source or add a TMDB key.",
   },
 ];
 
@@ -71,8 +71,9 @@ export const KNOWN_ISSUES = [
     summary:
       "Hosts limit request rates. The app throttles downloads on purpose to avoid bans.",
     tryThese: [
-      "Leave the job running — it retries with delays.",
-      "Download one title at a time.",
+      "Hosts limit request rates — extra jobs are queued automatically.",
+      "Leave the active job running — it retries with delays.",
+      "Download one title at a time when possible.",
       "Open View Log on the download for details.",
       "Try again later if the host is rate-limiting you.",
     ],
@@ -107,16 +108,16 @@ export const KNOWN_ISSUES = [
   },
   {
     id: "tvmaze-match",
-    section: "active",
+    section: "fixed",
     severity: "info",
-    status: "Free mode",
-    title: "Wrong show match in free mode (rare)",
+    status: "Improved in v1.0.13",
+    title: "Wrong show in player from TVMaze (free mode)",
     summary:
-      "Series episodes are loaded from TVMaze by title. Unusual names or duplicates can pick a different series until you add a TMDB key.",
+      "Free-mode TV now cross-matches IMDb, TVDB, TMDB, and AniList before playback, with title verification. Wrong embeds (e.g. metadata correct but wrong series in the player) should be rare; use Search TMDB on the show page if match still fails.",
     tryThese: [
-      "Add a TMDB key for exact metadata and episodes.",
-      "Search the show by exact title and open from results.",
-      "If posters still look wrong, restart the app after updating.",
+      "Check Playback match under Episodes before playing.",
+      "Tap Search TMDB for this title if no match is found.",
+      "Add a TMDB key for the most reliable metadata and episodes.",
     ],
   },
   {
@@ -303,6 +304,75 @@ export const KNOWN_ISSUES = [
       "Restart the app — the chooser should load normally.",
       "Choose free or TMDB, then continue into the app.",
     ],
+  },
+  {
+    id: "tv-episode-play",
+    section: "fixed",
+    severity: "info",
+    status: "Fixed in v1.0.13",
+    title: "TV episode clicks did nothing or played wrong show",
+    summary:
+      "Episode play now scrolls to the player, shows a clear notice when no TMDB match exists, and uses verified cross-API matching so TVMaze ids are never sent to embed URLs as TMDB ids.",
+    tryThese: [
+      "Open Episodes — confirm Playback match shows the right TMDB title.",
+      "Use Search TMDB if playback cannot start.",
+    ],
+  },
+  {
+    id: "fullscreen-scroll",
+    section: "fixed",
+    severity: "info",
+    status: "Fixed in v1.0.13",
+    title: "Fullscreen jumped page to top",
+    summary:
+      "Entering fullscreen no longer forces the page to scroll to the top, so the player stays in view.",
+    tryThese: ["Enter fullscreen from the player — scroll position should stay put."],
+  },
+  {
+    id: "home-continue-dup",
+    section: "fixed",
+    severity: "info",
+    status: "Fixed in v1.0.13",
+    title: "Duplicate continue watching on home",
+    summary:
+      "Resume hero shows your latest title; the Continue row lists other in-progress items only (More in progress).",
+    tryThese: ["Open Discover — one resume banner plus a single continue row when you have multiple titles."],
+  },
+  {
+    id: "search-shortcuts",
+    section: "fixed",
+    severity: "info",
+    status: "Fixed in v1.0.13",
+    title: "Search hard to discover",
+    summary:
+      "Home search bar, sidebar Ctrl+F hint, and Ctrl+F / Ctrl+K open global search (Ctrl+K still filters on Downloads).",
+    tryThese: [
+      "Press Ctrl+F or Ctrl+K from any page except Downloads.",
+      "On a TVMaze show without a match, use Search TMDB for this title.",
+    ],
+  },
+  {
+    id: "download-queue",
+    section: "fixed",
+    severity: "info",
+    status: "Fixed in v1.0.13",
+    title: "Multiple downloads triggered rate limits",
+    summary:
+      "Only one download runs at a time; additional jobs queue and start automatically. Completed downloads show an Open folder toast.",
+    tryThese: [
+      "Queue several downloads — extras show Queued until the active job finishes.",
+      "Tap Open folder on the completion toast.",
+    ],
+  },
+  {
+    id: "app-init-crash",
+    section: "fixed",
+    severity: "info",
+    status: "Fixed in v1.0.13",
+    title: "App crash: Cannot access before initialization",
+    summary:
+      "Fixed startup ordering so download notifications and toasts do not reference helpers before they are defined.",
+    tryThese: ["Reload the app — Discover and playback should load normally."],
   },
 ];
 

@@ -90,9 +90,10 @@ import {
 import { probeVideoProgress, seekWebviewTo } from "../utils/videoProgressProbe";
 import { fetchAniSkipTimings } from "../utils/aniSkip";
 import {
-  tvmazeFetchShow,
   resolveFreeTvShowDetails,
 } from "../utils/tvmazeApi";
+import { enrichTvmazeShowForPlayback } from "../utils/tvmazePlaybackMatch";
+import { resolveAnilistToTmdb } from "../utils/anilistHome";
 import { isFreeMetadataMode } from "../utils/metadataMode";
 import { enrichFreeMediaImages } from "../utils/freePosterResolver";
 import {
@@ -412,6 +413,7 @@ export default function TVPage({
   onDownloadIntentHandled,
   onSelect,
   onSelectPerson,
+  onOpenSearch,
 }) {
   const [details, setDetails] = useState(null);
   const [seasonData, setSeasonData] = useState(null);
@@ -473,6 +475,8 @@ export default function TVPage({
   );
   const sourceRef = useRef(null);
   const playerWrapRef = useRef(null);
+  const playerSectionRef = useRef(null);
+  const [playNotice, setPlayNotice] = useState(null);
   // Always-current refs for interval callbacks, avoids stale closures without restarting the interval
   const saveProgressRef = useRef(saveProgress);
   saveProgressRef.current = saveProgress;
@@ -526,12 +530,20 @@ export default function TVPage({
     setLoading(true);
     const load =
       item._source === "tvmaze"
-        ? tvmazeFetchShow(item.tvmazeId || item.id)
-        : apiKey
-          ? tmdbFetch(`/tv/${item.id}`, apiKey)
-          : item._anilistOnly
-            ? Promise.resolve(item)
-            : resolveFreeTvShowDetails(item);
+        ? enrichTvmazeShowForPlayback(item.tvmazeId || item.id, apiKey)
+        : item._anilistOnly && apiKey
+          ? resolveAnilistToTmdb(item, apiKey).then((resolved) => {
+              if (!resolved) return { ...item, _anilistOnly: true };
+              return {
+                ...resolved,
+                anilistId: item.anilistId || item.id,
+              };
+            })
+          : apiKey
+            ? tmdbFetch(`/tv/${item.id}`, apiKey)
+            : item._anilistOnly
+              ? Promise.resolve(item)
+              : resolveFreeTvShowDetails(item, apiKey);
 
     load
       .then(async (d) => {
@@ -613,18 +625,26 @@ export default function TVPage({
       return;
     }
     let mounted = true;
-    fetchTVRating(item.id, apiKey, ratingCountry).then((r) => {
+    const ratingId =
+      item._source === "tvmaze"
+        ? details?._tmdbId || null
+        : item.id;
+    if (!ratingId) {
+      setRating({ cert: null, minAge: null });
+      return;
+    }
+    fetchTVRating(ratingId, apiKey, ratingCountry).then((r) => {
       if (mounted) setRating(r);
     });
     return () => {
       mounted = false;
     };
-  }, [item.id, apiKey, ratingCountry]);
+  }, [item.id, item._source, details?._tmdbId, apiKey, ratingCountry]);
 
   useEffect(() => {
     if (!item.id) return;
 
-    if (details?._seasonEpisodes) {
+    if (details?._seasonEpisodes && !details?._crossMatchedTmdb) {
       setLoadingSeason(true);
       setSelectedEp(null);
       setPlaying(false);
@@ -655,8 +675,19 @@ export default function TVPage({
       isAnime && anilistSeasons?.length > 1 && tmdbSeasons.length <= 1
         ? 1
         : selectedSeason;
+    const tmdbShowId =
+      details?._crossMatchedTmdb && details?._tmdbId
+        ? details._tmdbId
+        : item._source === "tvmaze"
+          ? details?._tmdbId || null
+          : item.id;
+    if (!tmdbShowId) {
+      setLoadingSeason(false);
+      setSeasonData(null);
+      return;
+    }
     let mounted = true;
-    tmdbFetch(`/tv/${item.id}/season/${tmdbSeasonToFetch}`, apiKey)
+    tmdbFetch(`/tv/${tmdbShowId}/season/${tmdbSeasonToFetch}`, apiKey)
       .then((d) => {
         if (mounted) setSeasonData(d);
       })
@@ -675,7 +706,16 @@ export default function TVPage({
     return () => {
       mounted = false;
     };
-  }, [item.id, item._source, selectedSeason, apiKey, anilistSeasons, details?._seasonEpisodes]);
+  }, [
+    item.id,
+    item._source,
+    selectedSeason,
+    apiKey,
+    anilistSeasons,
+    details?._seasonEpisodes,
+    details?._crossMatchedTmdb,
+    details?._tmdbId,
+  ]);
 
   // Reset m3u8 URL, subtitle URL and source menu whenever the series, episode, or source changes
   useEffect(() => {
@@ -848,6 +888,50 @@ export default function TVPage({
 
   const d = details || item;
   const playbackLang = getPlaybackLang();
+
+  const playbackTmdbId = useMemo(() => {
+    const fromMeta = details?._tmdbId;
+    if (Number.isFinite(fromMeta) && fromMeta > 0) return fromMeta;
+    if (item._anilistOnly) {
+      const resolved = Number(details?.id);
+      if (Number.isFinite(resolved) && resolved > 0) return resolved;
+      return null;
+    }
+    const id = Number(item.id);
+    return Number.isFinite(id) && id > 0 ? id : null;
+  }, [details?._tmdbId, details?.id, item.id, item._source, item._anilistOnly]);
+
+  const streamTmdbId = playbackTmdbId;
+
+  /** Never use TVMaze numeric id as TMDB id in embed URLs. */
+  const embedTmdbId = useMemo(() => {
+    if (streamTmdbId) return streamTmdbId;
+    if (item._source === "tvmaze") return null;
+    const id = Number(item.id);
+    return Number.isFinite(id) && id > 0 ? id : null;
+  }, [streamTmdbId, item.id, item._source]);
+
+  const canStartPlayback = useMemo(() => {
+    if (embedTmdbId) return true;
+    if (isAnime && sourceIsAsync(playerSource)) return true;
+    if (isAnime && anilistData?.id) return true;
+    if (
+      item._source === "tvmaze" &&
+      isAnime &&
+      (details?._anilistId || anilistData?.id)
+    ) {
+      return true;
+    }
+    return false;
+  }, [
+    embedTmdbId,
+    isAnime,
+    playerSource,
+    anilistData?.id,
+    item._source,
+    details?._anilistId,
+  ]);
+
   const embedUrlOpts = useMemo(
     () => ({
       ...buildAnimePlaybackOpts({
@@ -861,7 +945,9 @@ export default function TVPage({
         originalLang: d.original_language || "ja",
         reloadToken: dubReloadNonce,
       }),
-      useAnilistPlayback: isAnime && animePlaybackMode === "anilist",
+      useAnilistPlayback:
+        (isAnime && animePlaybackMode === "anilist") ||
+        (isAnime && !streamTmdbId && !!anilistData?.id),
     }),
     [
       isAnime,
@@ -874,8 +960,11 @@ export default function TVPage({
       d.original_language,
       dubReloadNonce,
       animePlaybackMode,
+      streamTmdbId,
     ],
   );
+
+  const playerEmbedOpts = embedUrlOpts;
 
   const {
     status: sourceStatus,
@@ -957,17 +1046,6 @@ export default function TVPage({
     onFail: onLoadFail,
     onStuck: onLoadStuck,
   };
-
-  const playbackTmdbId = useMemo(() => {
-    const fromDetails = details?._tmdbId;
-    if (Number.isFinite(fromDetails) && fromDetails > 0) return fromDetails;
-    if (item._source !== "tvmaze" && Number(item.id) > 0) return Number(item.id);
-    return null;
-  }, [details?._tmdbId, item.id, item._source]);
-
-  const streamTmdbId =
-    playbackTmdbId ??
-    (item._source !== "tvmaze" && Number(item.id) > 0 ? Number(item.id) : null);
 
   const title = d.name || d.title;
   const year = (d.first_air_date || "").slice(0, 4);
@@ -1064,7 +1142,7 @@ export default function TVPage({
     const rawSeason = selectedEp._tmdbSeason ?? selectedSeason;
     const rawEpisode = selectedEp._tmdbAbsolute ?? selectedEp.episode_number;
     return applyEpisodeMapping(
-      playbackTmdbId ?? item.id,
+      embedTmdbId ?? 0,
       rawSeason,
       rawEpisode,
       episodeGroupMap,
@@ -1072,8 +1150,7 @@ export default function TVPage({
   }, [
     selectedEp,
     selectedSeason,
-    playbackTmdbId,
-    item.id,
+    embedTmdbId,
     episodeGroupMap,
     useAnilistSeasons,
     anilistSeasons,
@@ -1085,10 +1162,11 @@ export default function TVPage({
     if (!sourceSupportsSubDub(playerSource)) return;
     const wv = webviewRef.current;
     if (!wv) return;
+    if (!embedTmdbId) return;
     const url = getSourceUrl(
       playerSource,
       "tv",
-      streamTmdbId,
+      embedTmdbId,
       playerEp.season,
       playerEp.episode,
       embedUrlOpts,
@@ -1603,9 +1681,23 @@ export default function TVPage({
 
   const playEpisode = useCallback(
     (ep) => {
-      if (!streamTmdbId) {
+      if (!canStartPlayback) {
+        if (item._source === "tvmaze" && !details?._playbackMatchAttempted) {
+          setPlayNotice("Looking up IMDb, TVDB, TMDB, and AniList for a playable match…");
+        } else if (item._source === "tvmaze") {
+          setPlayNotice(
+            apiKey
+              ? "No TMDB match found via IMDb, TVDB, or title search. Use Search in the app to open this series from TMDB."
+              : "No playable match yet. Add a TMDB API key in Settings (matches IMDb/TVDB/title) or use Search for this show.",
+          );
+        } else {
+          setPlayNotice(
+            "Cannot start playback yet. Add a TMDB API key in Settings or wait for episode data to finish loading.",
+          );
+        }
         return;
       }
+      setPlayNotice(null);
       setM3u8Url(null);
       setStreamReferer("");
       setInterceptedSubs([]);
@@ -1621,9 +1713,21 @@ export default function TVPage({
         episode: ep.episode_number,
         episodeName: ep.name,
       });
-      // d and selectedSeason are stable within a season view; onHistory is useCallback in App
+      requestAnimationFrame(() => {
+        playerSectionRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
     },
-    [d, selectedSeason, onHistory, streamTmdbId],
+    [
+      canStartPlayback,
+      d,
+      selectedSeason,
+      onHistory,
+      item._source,
+      details?._tmdbId,
+    ],
   );
 
   const currentEpIndex = useMemo(() => {
@@ -1938,7 +2042,11 @@ export default function TVPage({
           </div>
 
           {playing && selectedEp && (
-            <div className="section section--player-active">
+            <div
+              ref={playerSectionRef}
+              id="tv-player-section"
+              className="section section--player-active"
+            >
               {isAnime && !playerFullscreen && (
                 <AnimeIssuesBanner variant="player" />
               )}
@@ -2148,21 +2256,21 @@ export default function TVPage({
                   </button>
                 </div>
                 <webview
-                  key={`${item.id}-${playerSource}-${animePlaybackMode}-${embedUrlOpts.anilistId ?? 0}-${selectedSeason}-${selectedEp?.episode_number ?? 0}-${dubReloadNonce}`}
+                  key={`${embedTmdbId ?? 0}-${item.id}-${playerSource}-${animePlaybackMode}-${embedUrlOpts.anilistId ?? 0}-${selectedSeason}-${selectedEp?.episode_number ?? 0}-${dubReloadNonce}`}
                   ref={webviewRef}
                   src={
                     pipOpen
                       ? "about:blank"
                       : isAsync
                         ? resolvedPlayerUrl || "about:blank"
-                        : streamTmdbId
+                        : canStartPlayback && (embedTmdbId || isAnime)
                           ? getSourceUrl(
                               playerSource,
                               "tv",
-                              streamTmdbId,
+                              embedTmdbId || 0,
                               playerEp.season,
                               playerEp.episode,
-                              embedUrlOpts,
+                              playerEmbedOpts,
                             )
                           : "about:blank"
                   }
@@ -2261,14 +2369,14 @@ export default function TVPage({
                       }
                       const url = isAsync
                         ? resolvedPlayerUrl
-                        : streamTmdbId
+                        : canStartPlayback && (embedTmdbId || isAnime)
                           ? getSourceUrl(
                               playerSource,
                               "tv",
-                              streamTmdbId,
+                              embedTmdbId || 0,
                               playerEp.season,
                               playerEp.episode,
-                              embedUrlOpts,
+                              playerEmbedOpts,
                             )
                           : null;
                       if (!url) return;
@@ -2556,6 +2664,61 @@ export default function TVPage({
 
           <div className="section">
             <div className="section-title">Episodes</div>
+            {item._source === "tvmaze" &&
+              !canStartPlayback &&
+              details?._playbackMatchAttempted &&
+              onOpenSearch && (
+                <div className="tv-tmdb-fallback">
+                  <p>
+                    No TMDB match for playback yet. Open search to find this
+                    series on TMDB and play from there.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => onOpenSearch(title)}
+                  >
+                    Search TMDB for “{title}”
+                  </button>
+                </div>
+              )}
+            {playNotice && (
+              <div className="tv-play-notice" role="status">
+                <p>{playNotice}</p>
+                {item._source === "tvmaze" &&
+                  !canStartPlayback &&
+                  details?._playbackMatchAttempted &&
+                  onOpenSearch && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary tv-play-notice__action"
+                      onClick={() => onOpenSearch(title)}
+                    >
+                      Search TMDB for “{title}”
+                    </button>
+                  )}
+              </div>
+            )}
+            {item._source === "tvmaze" && details?._playbackMatchVia && (
+              <p
+                style={{
+                  fontSize: 12,
+                  color: "var(--text3)",
+                  margin: "0 0 12px",
+                  lineHeight: 1.45,
+                }}
+              >
+                Playback match: {details._playbackMatchVia.replace(/\+/g, " + ")}
+                {details._matchedTitle
+                  ? ` — TMDB: “${details._matchedTitle}”`
+                  : ""}
+                {details._crossMatchedTmdb
+                  ? " (episodes from TMDB)"
+                  : details._episodesSource === "tvmaze"
+                    ? " (episodes from TVMaze)"
+                    : ""}
+              </p>
+            )}
             {seasons.length > 0 && (
               <div className="season-selector">
                 {seasons.map((s) => {
@@ -2796,7 +2959,10 @@ const EpisodeCard = memo(function EpisodeCard({
   return (
     <div
       className={`episode-card ${isPlaying ? "playing" : ""} ${epWatched ? "ep-watched" : ""} ${restricted ? "episode-card--restricted" : ""} ${epUnreleased ? "episode-card--unreleased" : ""}`}
-      onClick={() => (restricted || epUnreleased ? null : onPlay(ep))}
+      onClick={() => {
+        if (restricted || epUnreleased) return;
+        onPlay(ep);
+      }}
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();

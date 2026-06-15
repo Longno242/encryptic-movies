@@ -56,19 +56,18 @@ export async function tvmazeSearchShows(query) {
  * Load seasons + episodes from TVMaze for free mode (no TMDB key).
  * Keeps TMDB id on the item for embed players when known.
  */
-export async function resolveFreeTvShowDetails(item) {
+export async function resolveFreeTvShowDetails(item, apiKey = null) {
   const title = String(item?.name || item?.title || "").trim();
   const tmdbId =
     item?._tmdbId ??
     (item?._source !== "tvmaze" && item?.id != null ? Number(item.id) : null);
 
   if (item?._source === "tvmaze") {
+    const { applyPlaybackMatchToTvmazeShow } = await import(
+      "./tvmazePlaybackMatch"
+    );
     const show = await tvmazeFetchShow(item.tvmazeId || item.id);
-    return {
-      ...show,
-      _tmdbId: Number.isFinite(tmdbId) ? tmdbId : null,
-      _source: "tvmaze",
-    };
+    return applyPlaybackMatchToTvmazeShow(show, apiKey ?? null);
   }
 
   if (!title) {
@@ -88,13 +87,13 @@ export async function resolveFreeTvShowDetails(item) {
   const want = title.toLowerCase();
   const pick =
     matches.find((m) => (m.name || "").toLowerCase() === want) || matches[0];
+  const { applyPlaybackMatchToTvmazeShow } = await import("./tvmazePlaybackMatch");
   const show = await tvmazeFetchShow(pick.tvmazeId || pick.id);
+  const matched = await applyPlaybackMatchToTvmazeShow(show, apiKey ?? null);
   return {
-    ...show,
-    _tmdbId: Number.isFinite(tmdbId) ? tmdbId : null,
-    _source: "tvmaze",
-    poster_path: item.poster_path || show.poster_path,
-    backdrop_path: item.backdrop_path || show.backdrop_path,
+    ...matched,
+    poster_path: item.poster_path || matched.poster_path,
+    backdrop_path: item.backdrop_path || matched.backdrop_path,
   };
 }
 
@@ -134,8 +133,18 @@ export async function tvmazeFetchShow(showId) {
       }));
   }
 
+  const tmdbRaw = show.externals?.themoviedb;
+  const tmdbFromExternal =
+    tmdbRaw != null && tmdbRaw !== "" ? Number(tmdbRaw) : null;
+  const _tmdbId =
+    Number.isFinite(tmdbFromExternal) && tmdbFromExternal > 0
+      ? tmdbFromExternal
+      : null;
+
   return {
     ...normalizeTvmazeShow(show),
+    _tmdbId,
+    externals: show.externals || {},
     seasons: seasons.length ? seasons : [{ season_number: 1, name: "Season 1", episode_count: 0 }],
     _seasonEpisodes: seasonEpisodes,
   };

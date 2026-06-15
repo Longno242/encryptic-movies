@@ -49,6 +49,30 @@ export const ACCENT_PRESETS = [
     dim: "rgba(6, 182, 212, 0.18)",
     glow: "0 0 30px rgba(34, 211, 238, 0.35)",
   },
+  {
+    id: "emerald",
+    label: "Emerald",
+    color: "#10b981",
+    color2: "#34d399",
+    dim: "rgba(16, 185, 129, 0.16)",
+    glow: "0 0 28px rgba(52, 211, 153, 0.3)",
+  },
+  {
+    id: "rose",
+    label: "Rose",
+    color: "#f43f5e",
+    color2: "#fb7185",
+    dim: "rgba(244, 63, 94, 0.16)",
+    glow: "0 0 28px rgba(251, 113, 133, 0.32)",
+  },
+  {
+    id: "amber",
+    label: "Amber",
+    color: "#f59e0b",
+    color2: "#fbbf24",
+    dim: "rgba(245, 158, 11, 0.16)",
+    glow: "0 0 28px rgba(251, 191, 36, 0.3)",
+  },
 ];
 
 const DEFAULT_PRESET = ACCENT_PRESETS[0];

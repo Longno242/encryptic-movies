@@ -60,6 +60,18 @@ function loadDownloads() {
       if (!seen.has(key)) seen.set(key, d);
     }
     downloads = [...seen.values()];
+    let activeSeen = false;
+    for (const d of downloads) {
+      if (d.status === "downloading") {
+        if (activeSeen) {
+          d.status = "queued";
+          d.lastMessage =
+            d.lastMessage || "Queued — one download at a time";
+        } else {
+          activeSeen = true;
+        }
+      }
+    }
   } catch {
     downloads = [];
   }
@@ -219,99 +231,52 @@ function register(getMainWindow) {
     name: "Encryptic Downloader",
   }));
 
-  // ── start download ────────────────────────────────────────────────────────
-  ipcMain.handle(
-    "run-download",
-    (
-      _,
-      {
-        binaryPath,
-        m3u8Url,
-        streamReferer,
-        name,
-        downloadPath,
-        mediaId,
-        mediaType,
-        season,
-        episode,
-        posterPath,
-        tmdbId,
-        subtitles,
+  function hasActiveDownload(excludeId = null) {
+    return downloads.some(
+      (d) => d.status === "downloading" && d.id !== excludeId,
+    );
+  }
+
+  function kickDownloadQueue() {
+    if (hasActiveDownload()) return;
+    const next = downloads.find((d) => d.status === "queued");
+    if (!next) return;
+    const idx = downloads.findIndex((d) => d.id === next.id);
+    if (idx === -1) return;
+    downloads[idx].status = "downloading";
+    downloads[idx].lastMessage = "Starting…";
+    downloads[idx].startedAt = Date.now();
+    sendProgress({
+      id: next.id,
+      name: next.name,
+      status: "downloading",
+      lastMessage: downloads[idx].lastMessage,
+      posterPath: next.posterPath,
+    });
+    beginActiveDownload(next.id);
+  }
+
+  function beginActiveDownload(id) {
+    const idx = downloads.findIndex((d) => d.id === id);
+    if (idx === -1) return;
+    const entry = downloads[idx];
+    const {
+      m3u8Url,
+      name,
+      downloadPath: saveDir,
+      logPath,
+      streamReferer = "",
+    } = entry;
+    if (!m3u8Url || !logPath) return;
+
+    let cancelled = false;
+    activeProcs.set(id, {
+      kill() {
+        cancelled = true;
       },
-    ) => {
-      try {
-        if (!m3u8Url) {
-          return { ok: false, error: "no_stream_url" };
-        }
+    });
 
-        const resolvedDownloadPath = resolveDownloadPath(downloadPath);
-        const dirCheck = validateReadableDirectory(resolvedDownloadPath);
-        if (!dirCheck.ok) {
-          return {
-            ok: false,
-            error: dirCheck.error || "invalid_download_folder",
-          };
-        }
-        const saveDir = dirCheck.path;
-
-        const id = crypto.randomUUID();
-        const logPath = path.join(downloadLogsDir(), `${id}.log`);
-
-        const entry = {
-          id,
-          name,
-          m3u8Url,
-          downloadPath: saveDir,
-          filePath: null,
-          status: "downloading",
-          progress: 0,
-          speed: "",
-          size: "",
-          totalFragments: 0,
-          completedFragments: 0,
-          lastMessage: "Starting…",
-          startedAt: Date.now(),
-          completedAt: null,
-          mediaId: mediaId || null,
-          mediaType: mediaType || null,
-          season: season || null,
-          episode: episode || null,
-          posterPath: posterPath || null,
-          tmdbId: tmdbId || mediaId || null,
-          subtitles: Array.isArray(subtitles) ? subtitles : [],
-          subtitlePaths: [],
-          logPath,
-        };
-
-        // Create log file with header
-        try {
-          fs.writeFileSync(
-            logPath,
-            `Mov Download Log\nName: ${name}\nURL: ${m3u8Url}\nStarted: ${new Date().toISOString()}\n${"─".repeat(60)}\n`,
-            "utf8",
-          );
-        } catch {}
-
-        downloads.push(entry);
-
-        // Remove stale entries for the same media
-        const isSameMedia = (d) =>
-          d.id !== id &&
-          d.tmdbId &&
-          d.tmdbId === entry.tmdbId &&
-          d.mediaType === entry.mediaType &&
-          String(d.season ?? "") === String(entry.season ?? "") &&
-          String(d.episode ?? "") === String(entry.episode ?? "");
-        downloads = downloads.filter((d) => !isSameMedia(d));
-
-        let cancelled = false;
-        activeProcs.set(id, {
-          kill() {
-            cancelled = true;
-          },
-        });
-
-        const handleLine = (line) => {
+    const handleLine = (line) => {
           const trimmed = line.trim();
           if (!trimmed) return;
           const idx = downloads.findIndex((d) => d.id === id);
@@ -623,34 +588,136 @@ function register(getMainWindow) {
             logPath: downloads[idx].logPath,
           });
           saveDownloads();
+          kickDownloadQueue();
         };
 
-        appendLog("Encryptic Downloader — starting…");
-        handleLine("Encryptic: built-in downloader ready");
+    appendLog("Encryptic Downloader — starting…");
+    handleLine("Encryptic: built-in downloader ready");
 
-        runEncrypticDownload({
+    runEncrypticDownload({
+      m3u8Url,
+      outputDir: saveDir,
+      title: name,
+      jobId: id,
+      referer: streamReferer || "",
+      onLine: (line) => {
+        appendLog(line);
+        handleLine(line);
+      },
+      isCancelled: () => cancelled,
+    })
+      .then((outputPath) => finishDownload(true, outputPath))
+      .catch((err) =>
+        finishDownload(
+          false,
+          null,
+          err.message === "Cancelled"
+            ? "Cancelled"
+            : err.message || "Download failed",
+        ),
+      );
+  }
+
+  // ── start download ────────────────────────────────────────────────────────
+  ipcMain.handle(
+    "run-download",
+    (
+      _,
+      {
+        binaryPath,
+        m3u8Url,
+        streamReferer,
+        name,
+        downloadPath,
+        mediaId,
+        mediaType,
+        season,
+        episode,
+        posterPath,
+        tmdbId,
+        subtitles,
+      },
+    ) => {
+      try {
+        if (!m3u8Url) {
+          return { ok: false, error: "no_stream_url" };
+        }
+
+        const resolvedDownloadPath = resolveDownloadPath(downloadPath);
+        const dirCheck = validateReadableDirectory(resolvedDownloadPath);
+        if (!dirCheck.ok) {
+          return {
+            ok: false,
+            error: dirCheck.error || "invalid_download_folder",
+          };
+        }
+        const saveDir = dirCheck.path;
+
+        const id = crypto.randomUUID();
+        const logPath = path.join(downloadLogsDir(), `${id}.log`);
+
+        const shouldQueue = hasActiveDownload();
+
+        const entry = {
+          id,
+          name,
           m3u8Url,
-          outputDir: saveDir,
-          title: name,
-          jobId: id,
-          referer: streamReferer || "",
-          onLine: (line) => {
-            appendLog(line);
-            handleLine(line);
-          },
-          isCancelled: () => cancelled,
-        })
-          .then((outputPath) => finishDownload(true, outputPath))
-          .catch((err) =>
-            finishDownload(
-              false,
-              null,
-              err.message === "Cancelled"
-                ? "Cancelled"
-                : err.message || "Download failed",
-            ),
-          );
+          streamReferer: streamReferer || "",
+          downloadPath: saveDir,
+          filePath: null,
+          status: shouldQueue ? "queued" : "downloading",
+          progress: 0,
+          speed: "",
+          size: "",
+          totalFragments: 0,
+          completedFragments: 0,
+          lastMessage: shouldQueue
+            ? "Queued — one download at a time"
+            : "Starting…",
+          startedAt: Date.now(),
+          completedAt: null,
+          mediaId: mediaId || null,
+          mediaType: mediaType || null,
+          season: season || null,
+          episode: episode || null,
+          posterPath: posterPath || null,
+          tmdbId: tmdbId || mediaId || null,
+          subtitles: Array.isArray(subtitles) ? subtitles : [],
+          subtitlePaths: [],
+          logPath,
+        };
 
+        try {
+          fs.writeFileSync(
+            logPath,
+            `Mov Download Log\nName: ${name}\nURL: ${m3u8Url}\nStarted: ${new Date().toISOString()}\n${"─".repeat(60)}\n`,
+            "utf8",
+          );
+        } catch {}
+
+        downloads.push(entry);
+
+        const isSameMedia = (d) =>
+          d.id !== id &&
+          d.tmdbId &&
+          d.tmdbId === entry.tmdbId &&
+          d.mediaType === entry.mediaType &&
+          String(d.season ?? "") === String(entry.season ?? "") &&
+          String(d.episode ?? "") === String(entry.episode ?? "");
+        downloads = downloads.filter((d) => !isSameMedia(d));
+
+        if (shouldQueue) {
+          sendProgress({
+            id,
+            name,
+            status: "queued",
+            lastMessage: entry.lastMessage,
+            posterPath: entry.posterPath,
+          });
+          return { ok: true, id, queued: true, downloadPath: saveDir };
+        }
+
+        beginActiveDownload(id);
         return { ok: true, id, downloadPath: saveDir };
       } catch (e) {
         return { ok: false, error: e.message };
@@ -684,6 +751,7 @@ function register(getMainWindow) {
       if (dlPath) cleanupTempFiles(dlPath);
       downloads = downloads.filter((d) => d.id !== id);
       saveDownloads();
+      if (dlEntry?.status === "downloading") kickDownloadQueue();
       return { ok: true };
     } catch (e) {
       return { ok: false, error: e.message };

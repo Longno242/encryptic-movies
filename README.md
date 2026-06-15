@@ -4,7 +4,7 @@
 
 Cross-platform Electron desktop app for browsing movies, TV series, and anime. Metadata from [TMDB](https://www.themoviedb.org/) and [AniList](https://anilist.co/); playback uses third-party embed providers in-app.
 
-**Latest:** [v1.0.13](https://github.com/Longno242/encryptic-movies/releases/tag/v1.0.13) — TVMaze playback matching, home/search UX, download queue, and UI polish.
+**Latest:** [v1.0.14](https://github.com/Longno242/encryptic-movies/releases/tag/v1.0.14) — Fixes in-app update hang and TMDB key wiped after update.
 
 ## Features
 

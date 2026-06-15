@@ -1117,7 +1117,7 @@ export default function App() {
     return (
       <>
         <CatalogSetup
-          savedApiKey={catalogSetupRequired ? null : savedApiKey}
+          savedApiKey={savedApiKey}
           apiKeyStatus={apiKeyStatus}
           onUseSavedApiKey={useSavedApiKey}
           onSaveApiKey={saveApiKey}

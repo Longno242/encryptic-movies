@@ -348,17 +348,11 @@ async function clearStoredApiKey() {
 }
 
 function writeSecretMigration(opts = {}) {
-  const targetVersion = opts?.targetVersion;
-  const omitApiKey =
-    targetVersion &&
-    semverGte(normaliseVersion(targetVersion), V1011_APIKEY_RESET);
-
   try {
     const store = readStore();
     const plain = {};
     for (const [k, raw] of Object.entries(store)) {
       if (!raw) continue;
-      if (omitApiKey && k === "apikey") continue;
       try {
         const val = decryptLegacyValue(raw);
         if (val) plain[k] = val;
@@ -366,7 +360,6 @@ function writeSecretMigration(opts = {}) {
         /* skip */
       }
     }
-    if (omitApiKey) delete plain.apikey;
     if (Object.keys(plain).length > 0) {
       fs.writeFileSync(migrationPath(), JSON.stringify(plain), { mode: 0o600 });
     }
@@ -547,8 +540,8 @@ function register() {
 }
 
 /**
- * One-time on upgrade to v1.0.11+: remove TMDB key and show catalog chooser again.
- * Watch history and other AppData are untouched.
+ * One-time on upgrade from before v1.0.11: remove TMDB key and show catalog chooser.
+ * Routine in-app updates (1.0.12 → 1.0.13, etc.) must not wipe the saved token.
  */
 async function applyV1011ApiKeyResetIfNeeded({
   hadPendingUpdate = false,
@@ -564,13 +557,17 @@ async function applyV1011ApiKeyResetIfNeeded({
     ? normaliseVersion(state.lastRecordedVersion)
     : null;
 
-  const fromPending =
-    hadPendingUpdate &&
-    semverGte(normaliseVersion(pendingVersion || app.getVersion()), V1011_APIKEY_RESET);
+  // Already ran on 1.0.11+ — skip (fixes first in-app update wiping the key)
+  if (lastRecorded && semverGte(lastRecorded, V1011_APIKEY_RESET)) {
+    state.v1011ApiKeyCleared = true;
+    saveMigrationsState(state);
+    return false;
+  }
+
   const fromUpgrade =
     lastRecorded && semverLt(lastRecorded, V1011_APIKEY_RESET);
 
-  if (!fromPending && !fromUpgrade) return false;
+  if (!fromUpgrade) return false;
 
   await prepareCatalogSetupGate();
   state.v1011ApiKeyCleared = true;
@@ -578,6 +575,49 @@ async function applyV1011ApiKeyResetIfNeeded({
   console.log(
     "[migration] v1.0.11 — choose free catalog or enter a new TMDB key",
   );
+  return true;
+}
+
+/** If chooser gate is stuck but Credential Manager still has a TMDB token, dismiss gate. */
+async function recoverCatalogSetupIfKeyPresent() {
+  if (!isCatalogSetupRequired()) return false;
+  const key = await secureStoreGet("apikey");
+  if (!key) return false;
+
+  setCatalogSetupRequired(false);
+
+  const { BrowserWindow } = require("electron");
+  const indexPath = path.join(__dirname, "../../dist/index.html");
+  const win = new BrowserWindow({
+    show: false,
+    width: 640,
+    height: 480,
+    webPreferences: { nodeIntegration: false, contextIsolation: true },
+  });
+
+  try {
+    await new Promise((resolve, reject) => {
+      win.webContents.once("did-finish-load", resolve);
+      win.webContents.once("did-fail-load", (_, code, desc) =>
+        reject(new Error(desc || String(code))),
+      );
+      win.loadFile(indexPath).catch(reject);
+    });
+    await win.webContents.executeJavaScript(`
+      (() => {
+        if (!localStorage.getItem('mov_metadataMode')) {
+          localStorage.setItem('mov_metadataMode', 'tmdb');
+        }
+        return true;
+      })()
+    `);
+  } catch (err) {
+    console.warn("[migration] catalog recovery:", err?.message || err);
+  } finally {
+    if (!win.isDestroyed()) win.close();
+  }
+
+  console.log("[migration] TMDB key found — skipped catalog chooser after update");
   return true;
 }
 
@@ -624,6 +664,7 @@ module.exports = {
   register,
   applySecretMigrationIfNeeded,
   applyV1011ApiKeyResetIfNeeded,
+  recoverCatalogSetupIfKeyPresent,
   prepareCatalogSetupGate,
   isCatalogSetupRequired,
   setCatalogSetupRequired,

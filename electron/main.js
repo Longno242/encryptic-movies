@@ -560,6 +560,11 @@ if (!hasLock) {
     } catch (err) {
       console.error("[migration] v1.0.11 reset failed:", err?.message || err);
     }
+    try {
+      await storageIpc.recoverCatalogSetupIfKeyPresent();
+    } catch (err) {
+      console.error("[migration] catalog recovery failed:", err?.message || err);
+    }
     storageIpc.recordAppVersionSeen();
     createMainWindow();
     setTimeout(() => {

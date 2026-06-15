@@ -132,7 +132,7 @@ async function applyWindowsPortableUpdate(opts) {
     "$ErrorActionPreference = 'Stop'",
     `Wait-Process -Id ${pid} -ErrorAction SilentlyContinue`,
     "Start-Sleep -Seconds 2",
-    "Get-Process -Name 'Encryptic Movies' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue",
+    "Get-Process -Name 'Encryptic Movies','Encryptic.Movies' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue",
     "Start-Sleep -Seconds 1",
     `$installDir = '${installDir.replace(/'/g, "''")}'`,
     `$newExe = '${downloadedExe.replace(/'/g, "''")}'`,

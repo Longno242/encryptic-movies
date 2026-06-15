@@ -229,6 +229,18 @@ function register(getMainWindow, { writeSecretMigration, getDownloads }) {
     "download-and-install-update",
     async (_, { url, format, targetVersion }) => {
     try {
+      if (
+        format === "exe" &&
+        process.platform === "win32" &&
+        !app.isPackaged
+      ) {
+        return {
+          ok: false,
+          error:
+            "In-app updates only work in the installed portable app (Encryptic Movies.exe from Releases), not in npm start dev mode. Download the latest .exe from GitHub.",
+        };
+      }
+
       _updateAbortController = new AbortController();
       const { signal } = _updateAbortController;
 
@@ -276,6 +288,9 @@ function register(getMainWindow, { writeSecretMigration, getDownloads }) {
               let downloaded = 0;
               const file = fs.createWriteStream(destPath);
 
+              file.on("error", reject);
+              file.on("finish", resolve);
+
               res.on("data", (chunk) => {
                 if (signal.aborted) {
                   req.destroy();
@@ -284,7 +299,10 @@ function register(getMainWindow, { writeSecretMigration, getDownloads }) {
                   return;
                 }
                 downloaded += chunk.length;
-                file.write(chunk);
+                if (!file.write(chunk)) {
+                  res.pause();
+                  file.once("drain", () => res.resume());
+                }
                 const percent =
                   total > 0 ? Math.round((downloaded / total) * 100) : 0;
                 const mb = (downloaded / 1e6).toFixed(1);
@@ -298,11 +316,7 @@ function register(getMainWindow, { writeSecretMigration, getDownloads }) {
                   });
                 }
               });
-              res.on("end", () => {
-                file.end();
-                file.on("finish", resolve);
-                file.on("error", reject);
-              });
+              res.on("end", () => file.end());
               res.on("error", reject);
               req.on("error", reject);
             },

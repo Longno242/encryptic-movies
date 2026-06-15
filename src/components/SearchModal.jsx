@@ -16,8 +16,14 @@ function persistHistory(entries) {
   storage.set(HISTORY_KEY, entries);
 }
 
-export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
-  const [query, setQuery] = useState("");
+export default function SearchModal({
+  apiKey,
+  onSelect,
+  onClose,
+  offline,
+  initialQuery = "",
+}) {
+  const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState(loadHistory);
@@ -30,6 +36,10 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
     const t = setTimeout(() => inputRef.current?.focus(), 50);
     return () => clearTimeout(t);
   }, []);
+
+  useEffect(() => {
+    if (initialQuery) setQuery(initialQuery);
+  }, [initialQuery]);
 
   const freeMode = isFreeMetadataMode();
 

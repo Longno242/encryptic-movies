@@ -4,6 +4,104 @@
   padding-bottom: 64px;
 }
 
+.home-search-prompt {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: calc(100% - 80px);
+  max-width: 720px;
+  margin: 0 40px 20px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.03) 0%,
+    rgba(255, 255, 255, 0.01) 100%
+  );
+  color: var(--text3);
+  font-size: 14px;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    background 0.2s,
+    color 0.2s,
+    transform 0.15s;
+  text-align: left;
+}
+
+.home-search-prompt:hover {
+  border-color: color-mix(in srgb, var(--red) 40%, var(--border));
+  background: var(--surface);
+  color: var(--text2);
+  transform: translateY(-1px);
+}
+
+.home-search-prompt svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.home-search-prompt__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.home-search-prompt__key,
+.sidebar-btn-kbd {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 3px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text3);
+  flex-shrink: 0;
+}
+
+.sidebar-btn-kbd {
+  margin-left: auto;
+  opacity: 0.85;
+}
+
+.tv-tmdb-fallback {
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--red) 35%, var(--border));
+  background: color-mix(in srgb, var(--red) 8%, var(--surface));
+}
+
+.tv-tmdb-fallback p {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text2);
+}
+
+.tv-play-notice {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--gold, var(--red)) 30%, var(--border));
+  background: color-mix(in srgb, var(--gold, var(--red)) 6%, var(--surface));
+}
+
+.tv-play-notice p {
+  margin: 0;
+  color: var(--gold, var(--text));
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.tv-play-notice__action {
+  margin-top: 10px;
+}
+
 .home-continue-section {
   margin: 8px 0 20px;
   padding: 0 var(--page-pad, 24px);

@@ -209,6 +209,10 @@ html.sidebar-collapsed {
   display: none !important;
 }
 
+.sidebar--collapsed .sidebar-btn-kbd {
+  display: none !important;
+}
+
 .sidebar--collapsed .sidebar-btn-icon {
   margin: 0 auto !important;
 }

@@ -72,6 +72,7 @@ export default function App() {
   const [page, setPage] = useState(() => storage.get("startPage") || "home");
   const [selected, setSelected] = useState(null);
   const [showSearch, setShowSearch] = useState(false);
+  const [searchInitialQuery, setSearchInitialQuery] = useState("");
   const [dlSearchOpen, setDlSearchOpen] = useState(false);
   const [librarySort, setLibrarySort] = useState(
     () => storage.get(STORAGE_KEYS.LIBRARY_SORT) || "manual",
@@ -92,6 +93,23 @@ export default function App() {
   const [history, setHistory] = useState(() => storage.get("history") || []);
   const [watched, setWatched] = useState(() => storage.get("watched") || {});
   const [toast, setToast] = useState(null);
+  const toastTimerRef = useRef(null);
+  const showToast = useCallback((msg, opts = {}) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    const payload =
+      typeof msg === "string"
+        ? { message: msg, ...opts }
+        : { ...msg, ...opts };
+    setToast(payload);
+    const duration = payload.actionLabel ? 9000 : 2500;
+    toastTimerRef.current = setTimeout(() => setToast(null), duration);
+  }, []);
+
+  const openSearch = useCallback((prefill = "") => {
+    setSearchInitialQuery(prefill || "");
+    setShowSearch(true);
+  }, []);
+
   const [updateBanner, setUpdateBanner] = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   // null | "checking" | { entries: object[] } | "none"
@@ -510,14 +528,30 @@ export default function App() {
       // ── Desktop notification ──────────────────────
       if (
         update.status === "completed" &&
-        storage.get(STORAGE_KEYS.NOTIFY_DOWNLOAD_COMPLETE) !== false &&
-        window.electron.showNotification
+        storage.get(STORAGE_KEYS.NOTIFY_DOWNLOAD_COMPLETE) !== false
       ) {
-        window.electron.showNotification({
-          title: "Download complete",
-          body: update.name || "Your download has finished.",
-          silent: false,
-        });
+        if (window.electron.showNotification) {
+          window.electron.showNotification({
+            title: "Download complete",
+            body: update.name || "Your download has finished.",
+            silent: false,
+          });
+        }
+        if (update.filePath && window.electron?.showInFolder) {
+          showToast({
+            message: update.name
+              ? `Download complete — ${update.name}`
+              : "Download complete",
+            actionLabel: "Open folder",
+            onAction: () => window.electron.showInFolder(update.filePath),
+          });
+        } else {
+          showToast(
+            update.name
+              ? `Download complete — ${update.name}`
+              : "Download complete",
+          );
+        }
       }
 
       setDownloads((prev) => {
@@ -534,7 +568,7 @@ export default function App() {
       });
     });
     return () => window.electron.offDownloadProgress(handler);
-  }, []);
+  }, [showToast]);
 
   const handleDownloadStarted = useCallback((newEntry) => {
     setDownloads((prev) => {
@@ -689,13 +723,6 @@ export default function App() {
     });
   }, []);
 
-  const toastTimerRef = useRef(null);
-  const showToast = useCallback((msg) => {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToast(msg);
-    toastTimerRef.current = setTimeout(() => setToast(null), 2500);
-  }, []);
-
   const openCatalogSetup = useCallback(() => {
     storage.remove(STORAGE_KEYS.METADATA_MODE);
     setMetadataModeState(null);
@@ -749,12 +776,15 @@ export default function App() {
     const handler = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "f") {
         e.preventDefault();
-        setShowSearch(true);
+        openSearch();
       }
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         if (pageRef.current === "downloads") {
           e.preventDefault();
           setDlSearchOpen(true);
+        } else {
+          e.preventDefault();
+          openSearch();
         }
       }
       if (e.key === "Escape") {
@@ -780,7 +810,7 @@ export default function App() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [navigateBack]);
+  }, [navigateBack, openSearch]);
 
   const getMediaType = useCallback(
     (item) => item.media_type || (item.first_air_date ? "tv" : "movie"),
@@ -1115,7 +1145,7 @@ export default function App() {
         <Sidebar
           page={page}
           onNavigate={navigate}
-          onSearch={() => setShowSearch(true)}
+          onSearch={() => openSearch()}
           savedList={savedList}
           activeDownloads={activeDownloadCount}
           onReorderSaved={handleReorderSaved}
@@ -1189,6 +1219,7 @@ export default function App() {
                 onUseSavedApiKey={useSavedApiKey}
                 onSave={toggleSave}
                 onOpenCatalogSetup={openCatalogSetup}
+                onSearch={() => openSearch()}
               />
             )}
             {page === "movie" && selected && (
@@ -1263,6 +1294,7 @@ export default function App() {
                 onDownloadIntentHandled={clearDownloadIntent}
                 onSelect={handleSelectResult}
                 onSelectPerson={handleSelectPerson}
+                onOpenSearch={(title) => openSearch(title || "")}
               />
             )}
             {page === "history" && (
@@ -1320,8 +1352,12 @@ export default function App() {
           <SearchModal
             apiKey={apiKey}
             onSelect={handleSelectResult}
-            onClose={() => setShowSearch(false)}
+            onClose={() => {
+              setShowSearch(false);
+              setSearchInitialQuery("");
+            }}
             offline={offline}
+            initialQuery={searchInitialQuery}
           />
         )}
         {updateBanner && (
@@ -1357,7 +1393,23 @@ export default function App() {
             onInstalled={() => dismissUpdateVersion(updateBanner.latest)}
           />
         )}
-        {toast && <div className="toast">{toast}</div>}
+        {toast && (
+          <div className={`toast${toast.actionLabel ? " toast--action" : ""}`}>
+            <span className="toast__message">{toast.message}</span>
+            {toast.actionLabel && toast.onAction && (
+              <button
+                type="button"
+                className="toast__action"
+                onClick={() => {
+                  toast.onAction?.();
+                  setToast(null);
+                }}
+              >
+                {toast.actionLabel}
+              </button>
+            )}
+          </div>
+        )}
 
         {/* ── Episode check status pill / result card ── */}
         {episodeCheckStatus && (

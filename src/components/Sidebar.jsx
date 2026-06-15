@@ -123,7 +123,12 @@ export default function Sidebar({
           <NavBtn icon={<BackIcon />} label="Back" onClick={onBack} />
         )}
 
-        <NavBtn icon={<SearchIcon />} label="Search" onClick={onSearch} />
+        <NavBtn
+          icon={<SearchIcon />}
+          label="Search"
+          kbdHint="Ctrl+F"
+          onClick={onSearch}
+        />
         <NavBtn
           icon={<HomeIcon />}
           label="Discover"
@@ -271,19 +276,20 @@ export default function Sidebar({
   );
 }
 
-function NavBtn({ active, onClick, icon, label, badge, danger }) {
+function NavBtn({ active, onClick, icon, label, badge, danger, kbdHint }) {
   return (
     <button
       type="button"
       className={`sidebar-btn${active ? " active" : ""}${danger ? " sidebar-btn--danger" : ""}`}
       onClick={onClick}
       style={{ position: "relative" }}
-      title={label}
+      title={kbdHint ? `${label} (${kbdHint})` : label}
     >
       <span className="sidebar-btn-icon" aria-hidden="true">
         {icon}
       </span>
       <span className="sidebar-btn-label">{label}</span>
+      {kbdHint && <kbd className="sidebar-btn-kbd">{kbdHint}</kbd>}
       {badge != null && (
         <span className="sidebar-btn-badge">{badge}</span>
       )}

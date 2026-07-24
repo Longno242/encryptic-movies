@@ -15,31 +15,26 @@ const movies = [
     localFile: "the-dark-knight.jpg",
     posterUrl:
       "https://upload.wikimedia.org/wikipedia/en/1/1c/The_Dark_Knight_%282008_film%29.jpg",
-    imdbUrl:
-      "https://m.media-amazon.com/images/M/MV5BMTMxNTMwODM0NF5BMl5BanBnXkFtZTcwNDAyMTk2Mw@@._V1_SX300.jpg",
   },
   {
     title: "Inception",
     year: 2010,
     localFile: "inception.jpg",
-    imdbUrl:
-      "https://m.media-amazon.com/images/M/MV5BMjAxMzY3NjcxNF5BMl5BanBnXkFtZTcwNTI5OTE3NA@@._V1_SX300.jpg",
     posterUrl:
-      "https://m.media-amazon.com/images/M/MV5BMjAxMzY3NjcxNF5BMl5BanBnXkFtZTcwNTI5OTE3NA@@._V1_SX300.jpg",
+      "https://upload.wikimedia.org/wikipedia/en/2/2e/Inception_%282010%29_theatrical_poster.jpg",
   },
   {
     title: "Avengers: Endgame",
     year: 2019,
     localFile: "avengers-endgame.jpg",
     posterUrl:
-      "https://m.media-amazon.com/images/M/MV5BMTc5MDE2ODcwNV5BMl5BanBnXkFtZTgwMzI2NzQ2NzM@._V1_SX300.jpg",
+      "https://upload.wikimedia.org/wikipedia/en/0/0d/Avengers_Endgame_poster.jpg",
   },
   {
     title: "Titanic",
     year: 1997,
     localFile: "titanic.jpg",
-    imdbUrl:
-      "https://m.media-amazon.com/images/M/MV5BMDdmZGU5NDEtY2E5My00OWI4LWI3MDctMGYxYjczYjM4YzFhXkEyXkFqcGc@._V1_SX300.jpg",
+    posterUrl: "https://image.tmdb.org/t/p/w500/9xjZS2rlVxm8SFx8kPC3aIGCOYQ.jpg",
   },
   {
     title: "Interstellar",
@@ -52,36 +47,35 @@ const movies = [
     title: "The Matrix",
     year: 1999,
     localFile: "the-matrix.jpg",
-    posterUrl:
-      "https://upload.wikimedia.org/wikipedia/en/d/d8/The_Matrix.png",
+    posterUrl: "https://image.tmdb.org/t/p/w500/f89U3ADr1oiB1s9GkdPOEpXUk5H.jpg",
   },
   {
     title: "Parasite",
     year: 2019,
     localFile: "parasite.jpg",
     posterUrl:
-      "https://upload.wikimedia.org/wikipedia/en/a/a4/Parasite_%282019_film%29.jpg",
+      "https://upload.wikimedia.org/wikipedia/en/5/53/Parasite_%282019_film%29.png",
   },
   {
     title: "Oppenheimer",
     year: 2023,
     localFile: "oppenheimer.jpg",
-    imdbUrl:
-      "https://m.media-amazon.com/images/M/MV5BNDBmMjA3MmQtNzY1MC00N2I0LWI5YjUtY2U3MjhhYTY3N2VlXkEyXkFqcGc@._V1_SX300.jpg",
+    posterUrl:
+      "https://upload.wikimedia.org/wikipedia/en/4/4a/Oppenheimer_%28film%29.jpg",
   },
   {
     title: "Avatar",
     year: 2009,
     localFile: "avatar.jpg",
     posterUrl:
-      "https://m.media-amazon.com/images/M/MV5BMTYwOTEwNjAzMl5BMl5BanBnXkFtZTcwODc5MTUwMw@@._V1_SX300.jpg",
+      "https://upload.wikimedia.org/wikipedia/en/d/d6/Avatar_%282009_film%29_poster.jpg",
   },
   {
     title: "Joker",
     year: 2019,
     localFile: "joker.jpg",
-    imdbUrl:
-      "https://m.media-amazon.com/images/M/MV5BNGVjN2M4MzgtMVhMNS00ZDA1LWE1ZjgtZGY5N2RjNWE3ZjRkXkEyXkFqcGc@._V1_SX300.jpg",
+    posterUrl:
+      "https://upload.wikimedia.org/wikipedia/en/e/e1/Joker_%282019_film%29_poster.jpg",
   },
   {
     title: "Pulp Fiction",
@@ -94,8 +88,8 @@ const movies = [
     title: "Gladiator",
     year: 2000,
     localFile: "gladiator.jpg",
-    imdbUrl:
-      "https://m.media-amazon.com/images/M/MV5BMDlkMmNhYTMtYWU4Ny00ZDMiLWFmYWYtN2Y2ZDQ2Y2ZiZmVlXkEyXkFqcGc@._V1_SX300.jpg",
+    posterUrl:
+      "https://upload.wikimedia.org/wikipedia/en/f/fb/Gladiator_%282000_film_poster%29.png",
   },
 ];
 

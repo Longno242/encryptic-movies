@@ -7,13 +7,9 @@ const TVMAZE = "https://api.tvmaze.com";
 
 function stripHtml(html) {
   if (!html) return "";
-  return String(html)
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .trim();
+  // Parse as HTML text so tags / entities are handled by the DOM, not regex.
+  const doc = new DOMParser().parseFromString(String(html), "text/html");
+  return (doc.body?.textContent || "").replace(/\u00a0/g, " ").trim();
 }
 
 export function normalizeTvmazeShow(show) {

@@ -9,7 +9,7 @@ const STEPS = [
   { id: "done", label: "Finish" },
 ];
 
-const $ = (id) => document.getElementById(id);
+const byId = (id) => document.getElementById(id);
 
 let stepIndex = 0;
 let pendingUpdate = null;
@@ -35,7 +35,7 @@ function joinPath(dir, file) {
 
 function showPanel(stepId) {
   for (const step of STEPS) {
-    const panel = $(`panel-${step.id}`);
+    const panel = byId(`panel-${step.id}`);
     if (panel) panel.classList.toggle("installer-panel--hidden", step.id !== stepId);
   }
   renderStepNav();
@@ -43,7 +43,7 @@ function showPanel(stepId) {
 }
 
 function renderStepNav() {
-  const nav = $("step-nav");
+  const nav = byId("step-nav");
   if (!nav) return;
   nav.innerHTML = STEPS.map((s, i) => {
     let cls = "installer-step-pill";
@@ -54,9 +54,9 @@ function renderStepNav() {
 }
 
 function updateFooter() {
-  const back = $("btn-back");
-  const next = $("btn-next");
-  const cancel = $("btn-cancel");
+  const back = byId("btn-back");
+  const next = byId("btn-next");
+  const cancel = byId("btn-cancel");
   const step = STEPS[stepIndex];
 
   back.classList.toggle("is-hidden", stepIndex === 0 || step.id === "install");
@@ -83,14 +83,14 @@ async function refreshStatus() {
   config.installed = status.installed;
   config.installedVersion = status.version;
   config.exePath = status.exePath;
-  const el = $("side-installed-version");
+  const el = byId("side-installed-version");
   if (el) {
     el.textContent = status.installed
       ? `v${status.version} · Installed`
       : "Not installed";
   }
-  $("btn-repair").disabled = !status.installed;
-  $("btn-uninstall").disabled = !status.installed;
+  byId("btn-repair").disabled = !status.installed;
+  byId("btn-uninstall").disabled = !status.installed;
 }
 
 function setSideVersion() {
@@ -98,7 +98,7 @@ function setSideVersion() {
 }
 
 function showLocationError(message) {
-  const el = $("location-error");
+  const el = byId("location-error");
   if (!el) return;
   if (message) {
     el.textContent = message;
@@ -110,10 +110,10 @@ function showLocationError(message) {
 }
 
 function updateExePreview() {
-  const dir = ($("install-path")?.value || config.installDir || "").trim();
+  const dir = (byId("install-path")?.value || config.installDir || "").trim();
   config.installDir = dir;
   config.exePath = dir ? joinPath(dir, config.exeName) : "";
-  const preview = $("exe-preview-path");
+  const preview = byId("exe-preview-path");
   if (preview) preview.textContent = config.exePath || "—";
   showLocationError("");
   updateFooter();
@@ -125,11 +125,11 @@ function updateExePreview() {
 async function renderMovieSlide() {
   if (!movies.length) return;
   const m = movies[movieIndex];
-  const img = $("showcase-img");
-  const showcase = $("movie-showcase");
-  const title = $("showcase-title");
-  const year = $("showcase-year");
-  const dots = $("showcase-dots");
+  const img = byId("showcase-img");
+  const showcase = byId("movie-showcase");
+  const title = byId("showcase-title");
+  const year = byId("showcase-year");
+  const dots = byId("showcase-dots");
 
   if (title) title.textContent = m.title;
   if (year) year.textContent = String(m.year);
@@ -184,11 +184,13 @@ function startMovieCarousel(list) {
 /* ── Modals ───────────────────────────────────────────────────────────────── */
 
 function openModal(id) {
-  $(id)?.classList.remove("is-hidden");
+  if (typeof id !== "string" || !/^[a-z0-9-]+$/i.test(id)) return;
+  byId(id)?.classList.remove("is-hidden");
 }
 
 function closeModal(id) {
-  $(id)?.classList.add("is-hidden");
+  if (typeof id !== "string" || !/^[a-z0-9-]+$/i.test(id)) return;
+  byId(id)?.classList.add("is-hidden");
 }
 
 document.addEventListener("click", (e) => {
@@ -201,9 +203,9 @@ document.addEventListener("click", (e) => {
 function bindProgress() {
   if (progressUnsub) progressUnsub();
   progressUnsub = window.installerApi.onProgress(({ pct, label }) => {
-    const fill = $("install-progress-fill");
-    const pctEl = $("install-progress-pct");
-    const status = $("install-status-text");
+    const fill = byId("install-progress-fill");
+    const pctEl = byId("install-progress-pct");
+    const status = byId("install-status-text");
     if (fill) fill.style.width = `${pct}%`;
     if (pctEl) pctEl.textContent = `${Math.round(pct)}%`;
     if (status && label) status.textContent = label;
@@ -211,10 +213,10 @@ function bindProgress() {
 }
 
 async function runSimulatedInstall(isRepair) {
-  const statusEl = $("install-status-text");
-  const fillEl = $("install-progress-fill");
-  const pctEl = $("install-progress-pct");
-  const listEl = $("install-task-list");
+  const statusEl = byId("install-status-text");
+  const fillEl = byId("install-progress-fill");
+  const pctEl = byId("install-progress-pct");
+  const listEl = byId("install-task-list");
 
   const tasks = isRepair
     ? [
@@ -246,16 +248,16 @@ async function runSimulatedInstall(isRepair) {
 
 async function runInstallFlow(mode) {
   const isRepair = mode === "repair";
-  $("install-heading").textContent = isRepair ? "Repairing" : "Installing";
+  byId("install-heading").textContent = isRepair ? "Repairing" : "Installing";
   stepIndex = 2;
   showPanel("install");
-  $("btn-next").disabled = true;
-  $("install-task-list").innerHTML = "";
+  byId("btn-next").disabled = true;
+  byId("install-task-list").innerHTML = "";
 
   const opts = {
     installDir: config.installDir,
-    desktopShortcut: $("opt-desktop").checked,
-    startMenuShortcut: $("opt-startmenu").checked,
+    desktopShortcut: byId("opt-desktop").checked,
+    startMenuShortcut: byId("opt-startmenu").checked,
   };
 
   try {
@@ -283,7 +285,7 @@ async function runInstallFlow(mode) {
     stepIndex = 3;
     showPanel("done");
     finishScreen(isRepair ? "repair" : "install", false);
-    if ($("opt-open").checked && config.exePath) {
+    if (byId("opt-open").checked && config.exePath) {
       try {
         window.installerApi.launchApp(config.exePath);
       } catch {
@@ -292,9 +294,9 @@ async function runInstallFlow(mode) {
     }
   } catch (err) {
     const msg = err?.message || "Operation failed.";
-    $("install-status-text").textContent = msg;
+    byId("install-status-text").textContent = msg;
     showLocationError(msg);
-    $("btn-next").disabled = false;
+    byId("btn-next").disabled = false;
     stepIndex = 1;
     showPanel("location");
   }
@@ -304,36 +306,36 @@ async function runUninstall() {
   closeModal("uninstall-overlay");
   stepIndex = 2;
   showPanel("install");
-  $("install-heading").textContent = "Uninstalling";
-  $("btn-next").disabled = true;
+  byId("install-heading").textContent = "Uninstalling";
+  byId("btn-next").disabled = true;
   bindProgress();
 
   try {
     await window.installerApi.runUninstall({
       installDir: config.installDir,
-      removeUserData: $("opt-remove-data").checked,
+      removeUserData: byId("opt-remove-data").checked,
     });
     await refreshStatus();
-    $("install-heading").textContent = "Removed";
-    $("install-status-text").textContent = $("opt-remove-data").checked
+    byId("install-heading").textContent = "Removed";
+    byId("install-status-text").textContent = byId("opt-remove-data").checked
       ? "App and personal data were removed."
       : "App removed. Your watch history was kept in AppData.";
-    $("install-progress-fill").style.width = "100%";
-    $("install-progress-pct").textContent = "100%";
+    byId("install-progress-fill").style.width = "100%";
+    byId("install-progress-pct").textContent = "100%";
     window.setTimeout(() => {
       stepIndex = 0;
       showPanel("welcome");
     }, 2200);
   } catch (err) {
-    $("install-status-text").textContent = err?.message || "Uninstall failed.";
+    byId("install-status-text").textContent = err?.message || "Uninstall failed.";
     stepIndex = 0;
     showPanel("welcome");
   }
 }
 
 function finishScreen(mode, isPreview) {
-  $("done-exe-path").textContent = config.exePath;
-  const note = $("done-shortcuts-note");
+  byId("done-exe-path").textContent = config.exePath;
+  const note = byId("done-shortcuts-note");
   if (isPreview) {
     note.textContent =
       "Preview run complete (no .exe copied). Build the app with npm run dist:win-desktop, then install again for a real setup.";
@@ -345,8 +347,8 @@ function finishScreen(mode, isPreview) {
     return;
   }
   const parts = [];
-  if ($("opt-desktop").checked) parts.push("desktop shortcut");
-  if ($("opt-startmenu").checked) parts.push("Start menu");
+  if (byId("opt-desktop").checked) parts.push("desktop shortcut");
+  if (byId("opt-startmenu").checked) parts.push("Start menu");
   note.textContent = parts.length
     ? `Created: ${parts.join(", ")}.`
     : "Installation complete.";
@@ -360,18 +362,18 @@ function delay(ms) {
 
 function resetUpdateOverlay() {
   pendingUpdate = null;
-  $("update-title").textContent = "Checking…";
-  $("update-message").textContent = "";
-  $("update-versions").classList.add("is-hidden");
-  $("update-changelog").classList.add("is-hidden");
-  $("update-github-link-wrap")?.classList.add("is-hidden");
-  $("update-progress-wrap").classList.add("is-hidden");
-  $("update-btn-install").classList.add("is-hidden");
+  byId("update-title").textContent = "Checking…";
+  byId("update-message").textContent = "";
+  byId("update-versions").classList.add("is-hidden");
+  byId("update-changelog").classList.add("is-hidden");
+  byId("update-github-link-wrap")?.classList.add("is-hidden");
+  byId("update-progress-wrap").classList.add("is-hidden");
+  byId("update-btn-install").classList.add("is-hidden");
 }
 
 function showUpdateGithubLink(releaseUrl) {
-  const wrap = $("update-github-link-wrap");
-  const link = $("update-github-link");
+  const wrap = byId("update-github-link-wrap");
+  const link = byId("update-github-link");
   if (!wrap || !link || !releaseUrl) return;
   link.href = releaseUrl;
   link.onclick = (e) => {
@@ -382,39 +384,39 @@ function showUpdateGithubLink(releaseUrl) {
 }
 
 async function runUpdateCheck() {
-  const btn = $("btn-check-updates");
+  const btn = byId("btn-check-updates");
   btn.disabled = true;
   resetUpdateOverlay();
   openModal("update-overlay");
-  $("update-title").textContent = "Checking for updates…";
+  byId("update-title").textContent = "Checking for updates…";
 
   try {
     const result = await window.installerApi.checkUpdates(config.installDir);
     pendingUpdate = result;
 
     if (!result.hasUpdate) {
-      $("update-title").textContent = "You're up to date";
-      $("update-message").textContent = `v${result.current} is the latest.`;
+      byId("update-title").textContent = "You're up to date";
+      byId("update-message").textContent = `v${result.current} is the latest.`;
       if (result.releaseUrl) showUpdateGithubLink(result.releaseUrl);
       return;
     }
 
-    $("update-title").textContent = result.isDemo ? "Update preview" : "Update ready";
-    $("update-message").textContent = result.isDemo
+    byId("update-title").textContent = result.isDemo ? "Update preview" : "Update ready";
+    byId("update-message").textContent = result.isDemo
       ? "Demo update — connect GitHub in github.config.json for real releases."
       : `Upgrade from v${result.current} to v${result.latest}. Download the new build from GitHub if repair does not apply.`;
     if (result.releaseUrl) showUpdateGithubLink(result.releaseUrl);
-    $("update-current").textContent = `v${result.current}`;
-    $("update-latest").textContent = `v${result.latest}`;
-    $("update-versions").classList.remove("is-hidden");
+    byId("update-current").textContent = `v${result.current}`;
+    byId("update-latest").textContent = `v${result.latest}`;
+    byId("update-versions").classList.remove("is-hidden");
     if (result.changelog) {
-      $("update-changelog").textContent = result.changelog.replace(/\*\*/g, "");
-      $("update-changelog").classList.remove("is-hidden");
+      byId("update-changelog").textContent = result.changelog.replace(/\*\*/g, "");
+      byId("update-changelog").classList.remove("is-hidden");
     }
-    $("update-btn-install").classList.remove("is-hidden");
+    byId("update-btn-install").classList.remove("is-hidden");
   } catch (err) {
-    $("update-title").textContent = "Check failed";
-    $("update-message").textContent = err?.message || "Could not reach update server.";
+    byId("update-title").textContent = "Check failed";
+    byId("update-message").textContent = err?.message || "Could not reach update server.";
   } finally {
     btn.disabled = false;
   }
@@ -447,14 +449,14 @@ async function init() {
     previewInstallAllowed: defaults.previewInstallAllowed,
   });
 
-  $("app-name-welcome").textContent = config.appName;
-  $("app-name-done").textContent = config.appName;
-  $("exe-name-label").textContent = config.exeName;
-  $("install-path").value = config.installDir;
-  $("side-tagline").textContent = defaults.spotlight?.tagline || "";
-  $("side-subtitle").textContent = defaults.spotlight?.subtitle || "";
-  $("payload-warning").classList.toggle("is-hidden", config.payloadAvailable);
-  $("location-preview-hint")?.classList.toggle(
+  byId("app-name-welcome").textContent = config.appName;
+  byId("app-name-done").textContent = config.appName;
+  byId("exe-name-label").textContent = config.exeName;
+  byId("install-path").value = config.installDir;
+  byId("side-tagline").textContent = defaults.spotlight?.tagline || "";
+  byId("side-subtitle").textContent = defaults.spotlight?.subtitle || "";
+  byId("payload-warning").classList.toggle("is-hidden", config.payloadAvailable);
+  byId("location-preview-hint")?.classList.toggle(
     "is-hidden",
     !config.previewInstallAllowed,
   );
@@ -465,39 +467,39 @@ async function init() {
   renderStepNav();
   showPanel("welcome");
 
-  $("btn-minimize").addEventListener("click", () => window.installerApi.minimize());
-  $("btn-win-close").addEventListener("click", () => window.installerApi.close());
-  $("btn-browse").addEventListener("click", async () => {
+  byId("btn-minimize").addEventListener("click", () => window.installerApi.minimize());
+  byId("btn-win-close").addEventListener("click", () => window.installerApi.close());
+  byId("btn-browse").addEventListener("click", async () => {
     const picked = await window.installerApi.pickDirectory(config.installDir);
     if (picked) {
-      $("install-path").value = picked;
+      byId("install-path").value = picked;
       updateExePreview();
     }
   });
-  $("install-path")?.addEventListener("input", () => updateExePreview());
-  $("install-path")?.addEventListener("change", () => updateExePreview());
-  $("btn-cancel").addEventListener("click", () => window.installerApi.close());
-  $("btn-back").addEventListener("click", () => {
+  byId("install-path")?.addEventListener("input", () => updateExePreview());
+  byId("install-path")?.addEventListener("change", () => updateExePreview());
+  byId("btn-cancel").addEventListener("click", () => window.installerApi.close());
+  byId("btn-back").addEventListener("click", () => {
     if (stepIndex > 0) {
       stepIndex -= 1;
       showPanel(STEPS[stepIndex].id);
     }
   });
-  $("btn-next").addEventListener("click", () => onNext());
+  byId("btn-next").addEventListener("click", () => onNext());
 
-  $("btn-check-updates").addEventListener("click", () => runUpdateCheck());
-  $("update-close").addEventListener("click", () => closeModal("update-overlay"));
-  $("update-btn-dismiss").addEventListener("click", () => closeModal("update-overlay"));
-  $("update-btn-install").addEventListener("click", () => runUpdateInstall());
+  byId("btn-check-updates").addEventListener("click", () => runUpdateCheck());
+  byId("update-close").addEventListener("click", () => closeModal("update-overlay"));
+  byId("update-btn-dismiss").addEventListener("click", () => closeModal("update-overlay"));
+  byId("update-btn-install").addEventListener("click", () => runUpdateInstall());
 
-  $("btn-repair").addEventListener("click", () => openModal("repair-overlay"));
-  $("repair-confirm").addEventListener("click", () => {
+  byId("btn-repair").addEventListener("click", () => openModal("repair-overlay"));
+  byId("repair-confirm").addEventListener("click", () => {
     closeModal("repair-overlay");
     runInstallFlow("repair");
   });
 
-  $("btn-uninstall").addEventListener("click", () => openModal("uninstall-overlay"));
-  $("uninstall-confirm").addEventListener("click", () => runUninstall());
+  byId("btn-uninstall").addEventListener("click", () => openModal("uninstall-overlay"));
+  byId("uninstall-confirm").addEventListener("click", () => runUninstall());
 }
 
 async function onNext() {

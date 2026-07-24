@@ -1,6 +1,6 @@
 {
   "name": "encryptic-movies",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "description": "Encryptic Movies — desktop movies, TV, and anime",
   "author": {
     "name": "Joe",
@@ -41,7 +41,19 @@
     "electron": "^40.4.1",
     "electron-builder": "^26.7.0",
     "terser": "^5.46.0",
-    "vite": "^7.3.1"
+    "vite": "^7.3.5"
+  },
+  "overrides": {
+    "brace-expansion": "^5.0.7",
+    "js-yaml": "^4.2.0",
+    "@babel/core": "^7.29.6",
+    "undici": "^6.27.0",
+    "tar": "^7.5.16",
+    "form-data": "^4.0.6",
+    "ws": "^7.5.11",
+    "tmp": "^0.2.6",
+    "esbuild": "^0.28.1",
+    "vite": "^7.3.5"
   },
   "build": {
     "appId": "com.encryptic.movies",

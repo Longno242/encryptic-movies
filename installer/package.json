@@ -1,6 +1,6 @@
 {
   "name": "encryptic-movies-setup",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Encryptic Movies — custom setup wizard",
   "main": "main.js",
   "author": {
@@ -16,6 +16,14 @@
   "devDependencies": {
     "electron": "40.10.0",
     "electron-builder": "26.8.1"
+  },
+  "overrides": {
+    "brace-expansion": "^5.0.7",
+    "js-yaml": "^4.2.0",
+    "undici": "^6.27.0",
+    "tar": "^7.5.16",
+    "form-data": "^4.0.6",
+    "tmp": "^0.2.6"
   },
   "build": {
     "appId": "com.encryptic.movies.setup",

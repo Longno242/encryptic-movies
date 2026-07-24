@@ -34,12 +34,27 @@ const DEFAULT_HEADERS = {
   "Accept-Language": "en-US,en;q=0.9",
 };
 
+function hostnameOf(url) {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function hostMatches(hostname, allowed) {
+  return allowed.some(
+    (d) => hostname === d || hostname.endsWith(`.${d}`),
+  );
+}
+
 function headersFor(url) {
   const h = { ...DEFAULT_HEADERS };
-  if (url.includes("media-amazon.com")) {
+  const host = hostnameOf(url);
+  if (hostMatches(host, ["media-amazon.com"])) {
     h.Referer = "https://www.imdb.com/";
   }
-  if (url.includes("wikimedia.org") || url.includes("wikipedia.org")) {
+  if (hostMatches(host, ["wikimedia.org", "wikipedia.org"])) {
     h.Referer = "https://en.wikipedia.org/";
   }
   return h;

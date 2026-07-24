@@ -36,8 +36,8 @@ function createWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      /* file:// page must load https poster images */
-      webSecurity: false,
+      /* Posters load via IPC as data URLs — keep webSecurity on */
+      webSecurity: true,
     },
   });
 

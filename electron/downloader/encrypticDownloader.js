@@ -38,6 +38,61 @@ function resolveUrl(base, relative) {
   }
 }
 
+/** Block SSRF to localhost / private / link-local / metadata endpoints. */
+function assertSafeRemoteUrl(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error("Invalid URL");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Only http(s) URLs are allowed");
+  }
+  const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (
+    host === "localhost" ||
+    host === "metadata.google.internal" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".local")
+  ) {
+    throw new Error("Blocked host");
+  }
+  // IPv4 literal
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
+    const parts = host.split(".").map(Number);
+    const [a, b] = parts;
+    if (
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 100 && b >= 64 && b <= 127)
+    ) {
+      throw new Error("Blocked private address");
+    }
+  }
+  // IPv6 / IPv4-mapped
+  if (host.includes(":")) {
+    if (
+      host === "::1" ||
+      host === "::" ||
+      host.startsWith("fc") ||
+      host.startsWith("fd") ||
+      host.startsWith("fe80") ||
+      host.startsWith("::ffff:127.") ||
+      host.startsWith("::ffff:10.") ||
+      host.startsWith("::ffff:192.168.") ||
+      /^::ffff:172\.(1[6-9]|2\d|3[0-1])\./.test(host)
+    ) {
+      throw new Error("Blocked private address");
+    }
+  }
+  return parsed.href;
+}
+
 function getOrigin(url) {
   try {
     return new URL(url).origin + "/";
@@ -131,6 +186,7 @@ function partialDirFor(outputDir, title) {
 }
 
 async function requestBufferElectron(url, { headers = {}, timeoutMs = 120000 } = {}) {
+  const safeUrl = assertSafeRemoteUrl(url);
   await paceBeforeRequest();
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -150,7 +206,7 @@ async function requestBufferElectron(url, { headers = {}, timeoutMs = 120000 } =
 
     const request = net.request({
       method: "GET",
-      url,
+      url: safeUrl,
       session: playerSession(),
       redirect: "follow",
     });
@@ -164,7 +220,7 @@ async function requestBufferElectron(url, { headers = {}, timeoutMs = 120000 } =
         const loc = response.headers.location?.[0] || response.headers.Location?.[0];
         if (loc) {
           clearTimeout(timer);
-          requestBufferElectron(resolveUrl(url, loc), { headers, timeoutMs })
+          requestBufferElectron(resolveUrl(safeUrl, loc), { headers, timeoutMs })
             .then((b) => done(resolve, b))
             .catch((e) => done(reject, e));
           return;
@@ -224,30 +280,24 @@ function formatRequestError(err, url) {
   }
 }
 
-async function requestBufferNode(
-  url,
-  { headers = {}, timeoutMs = 120000, insecure = false } = {},
-) {
+async function requestBufferNode(url, { headers = {}, timeoutMs = 120000 } = {}) {
+  const safeUrl = assertSafeRemoteUrl(url);
   await paceBeforeRequest();
   return new Promise((resolve, reject) => {
-    const parsed = new URL(url);
+    const parsed = new URL(safeUrl);
     const lib = parsed.protocol === "https:" ? https : http;
     const reqOpts = {
       headers: { "User-Agent": CHROME_UA, Accept: "*/*", ...headers },
       timeout: timeoutMs,
     };
-    if (parsed.protocol === "https:" && insecure) {
-      reqOpts.rejectUnauthorized = false;
-    }
     const req = lib.get(
-      url,
+      safeUrl,
       reqOpts,
       (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          requestBufferNode(resolveUrl(url, res.headers.location), {
+          requestBufferNode(resolveUrl(safeUrl, res.headers.location), {
             headers,
             timeoutMs,
-            insecure,
           })
             .then(resolve)
             .catch(reject);
@@ -280,6 +330,7 @@ async function requestBufferNode(
 
 async function requestBuffer(url, opts = {}) {
   const { headers = {}, timeoutMs = 120000, usePlayerSession = true } = opts;
+  assertSafeRemoteUrl(url);
   let electronErr;
   if (usePlayerSession) {
     try {
@@ -293,15 +344,8 @@ async function requestBuffer(url, opts = {}) {
       throw electronErr;
     }
     if (isTlsError(electronErr)) {
-      try {
-        return await requestBufferNode(url, {
-          headers,
-          timeoutMs,
-          insecure: true,
-        });
-      } catch {
-        throw new Error(formatRequestError(electronErr, url));
-      }
+      // Do not disable TLS verification — surface a clear error instead.
+      throw new Error(formatRequestError(electronErr, url));
     }
     try {
       return await requestBufferNode(url, { headers, timeoutMs });

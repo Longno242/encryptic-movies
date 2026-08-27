@@ -38,11 +38,15 @@ function resolveUrl(base, relative) {
   }
 }
 
+function hrefFromSafeUrl(parsed) {
+  return parsed.href;
+}
+
 /** Block SSRF to localhost / private / link-local / metadata endpoints. */
 function assertSafeRemoteUrl(url) {
   let parsed;
   try {
-    parsed = new URL(url);
+    parsed = new URL(String(url));
   } catch {
     throw new Error("Invalid URL");
   }
@@ -90,7 +94,23 @@ function assertSafeRemoteUrl(url) {
       throw new Error("Blocked private address");
     }
   }
-  return parsed.href;
+  return parsed;
+}
+
+/** Resolve a redirect/relative URL and re-apply SSRF checks before following it. */
+function resolveSafeRemoteUrl(base, relative) {
+  if (!relative || typeof relative !== "string") {
+    throw new Error("Invalid redirect URL");
+  }
+  const baseHref =
+    base instanceof URL ? base.href : assertSafeRemoteUrl(base).href;
+  let resolved;
+  try {
+    resolved = new URL(relative, baseHref);
+  } catch {
+    throw new Error("Invalid redirect URL");
+  }
+  return assertSafeRemoteUrl(resolved.href);
 }
 
 function getOrigin(url) {
@@ -186,7 +206,8 @@ function partialDirFor(outputDir, title) {
 }
 
 async function requestBufferElectron(url, { headers = {}, timeoutMs = 120000 } = {}) {
-  const safeUrl = assertSafeRemoteUrl(url);
+  const safeParsed = assertSafeRemoteUrl(url);
+  const safeUrl = hrefFromSafeUrl(safeParsed);
   await paceBeforeRequest();
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -208,7 +229,7 @@ async function requestBufferElectron(url, { headers = {}, timeoutMs = 120000 } =
       method: "GET",
       url: safeUrl,
       session: playerSession(),
-      redirect: "follow",
+      redirect: "manual",
     });
     for (const [k, v] of Object.entries(headers)) {
       if (v) request.setHeader(k, String(v));
@@ -220,7 +241,14 @@ async function requestBufferElectron(url, { headers = {}, timeoutMs = 120000 } =
         const loc = response.headers.location?.[0] || response.headers.Location?.[0];
         if (loc) {
           clearTimeout(timer);
-          requestBufferElectron(resolveUrl(safeUrl, loc), { headers, timeoutMs })
+          let redirectParsed;
+          try {
+            redirectParsed = resolveSafeRemoteUrl(safeParsed, loc);
+          } catch (e) {
+            done(reject, e);
+            return;
+          }
+          requestBufferElectron(redirectParsed.href, { headers, timeoutMs })
             .then((b) => done(resolve, b))
             .catch((e) => done(reject, e));
           return;
@@ -281,10 +309,11 @@ function formatRequestError(err, url) {
 }
 
 async function requestBufferNode(url, { headers = {}, timeoutMs = 120000 } = {}) {
-  const safeUrl = assertSafeRemoteUrl(url);
+  const safeParsed = assertSafeRemoteUrl(url);
+  const safeUrl = hrefFromSafeUrl(safeParsed);
   await paceBeforeRequest();
   return new Promise((resolve, reject) => {
-    const parsed = new URL(safeUrl);
+    const parsed = safeParsed;
     const lib = parsed.protocol === "https:" ? https : http;
     const reqOpts = {
       headers: { "User-Agent": CHROME_UA, Accept: "*/*", ...headers },
@@ -295,7 +324,15 @@ async function requestBufferNode(url, { headers = {}, timeoutMs = 120000 } = {})
       reqOpts,
       (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          requestBufferNode(resolveUrl(safeUrl, res.headers.location), {
+          let redirectParsed;
+          try {
+            redirectParsed = resolveSafeRemoteUrl(safeParsed, res.headers.location);
+          } catch (e) {
+            reject(e);
+            res.resume();
+            return;
+          }
+          requestBufferNode(redirectParsed.href, {
             headers,
             timeoutMs,
           })
@@ -330,7 +367,7 @@ async function requestBufferNode(url, { headers = {}, timeoutMs = 120000 } = {})
 
 async function requestBuffer(url, opts = {}) {
   const { headers = {}, timeoutMs = 120000, usePlayerSession = true } = opts;
-  assertSafeRemoteUrl(url);
+  const safeUrl = hrefFromSafeUrl(assertSafeRemoteUrl(url));
   let electronErr;
   if (usePlayerSession) {
     try {

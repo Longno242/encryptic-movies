@@ -15,6 +15,9 @@ export const ANIME_PLAYER_CHAIN = [
   "neon",
   "2embed",
   "videasy",
+  "vidfast",
+  "moviesapi",
+  "vidlink",
   "vidplus",
   "vidnest",
 ];
@@ -28,6 +31,10 @@ const SOURCE_ALIASES = {
   vidplus: "vidplus",
   vidnest: "vidnest",
   neon: "neon",
+  vidfast: "vidfast",
+  moviesapi: "moviesapi",
+  vidlink: "vidlink",
+  multiembed: "multiembed",
 };
 
 export function normalizeAnimePlayerSource(sourceId) {
@@ -215,6 +222,22 @@ export function buildAnimeTmdbFallbackUrl(sourceId, tmdbId, season, episode, opt
       lang: subLang,
       ds_lang: subLang,
     });
+  } else if (key === "vidfast") {
+    url = withQuery(`https://vidfast.pro/tv/${tmdbId}/${s}/${e}`, {
+      autoPlay: "true",
+      autoplay: "true",
+    });
+  } else if (key === "moviesapi") {
+    url = withQuery(`https://moviesapi.to/tv/${tmdbId}/${s}/${e}`, {
+      autoplay: "1",
+    });
+  } else if (key === "vidlink") {
+    url = withQuery(`https://vidlink.pro/tv/${tmdbId}/${s}/${e}`, {
+      autoplay: "true",
+      title: "false",
+    });
+  } else if (key === "multiembed") {
+    url = `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1&s=${s}&e=${e}`;
   } else if (key === "neon") {
     url = withQuery(`https://ezvidapi.com/embed/tv/${tmdbId}/${s}/${e}`, {
       autoplay: "1",

@@ -14,22 +14,32 @@ function getAdblockCss() {
     iframe[src*="taboola"],
     iframe[src*="outbrain"],
     iframe[src*="propeller"],
+    iframe[src*="juicyads"],
+    iframe[src*="hilltop"],
+    iframe[src*="popcash"],
     iframe[src*="ads."],
     iframe[src*="ads/"],
     iframe[src*="banner"],
     iframe[src*="sponsor"],
     iframe[src*="affiliate"],
     iframe[src*="click."],
+    iframe[src*="profitableratecpm"],
+    iframe[src*="tsyndicate"],
     [class*="ad-container"],
     [class*="ad_container"],
     [class*="adsbox"],
     [class*="ad-banner"],
-    [class*="popup"],
+    [class*="ad_banner"],
+    [class*="adbanner"],
     [class*="pop-under"],
+    [class*="popunder"],
     [id*="ad-container"],
+    [id*="ad_container"],
     [id*="popunder"],
     [id*="popup-ad"],
     [id*="banner-ad"],
+    [id*="google_ads"],
+    [id*="adsense"],
     div[class*="overlay"][class*="ad"],
     .encryptic-ad-hidden {
       display: none !important;
@@ -47,8 +57,8 @@ function getAdblockCss() {
 
 function getAdblockScript() {
   return `(function() {
-    if (window.__encrypticShieldV2) return;
-    window.__encrypticShieldV2 = true;
+    if (window.__encrypticShieldV3) return;
+    window.__encrypticShieldV3 = true;
 
     var SCAM_RE = [
       /download/i,
@@ -57,6 +67,8 @@ function getAdblockScript() {
       /continue\\s+to/i,
       /press\\s+allow/i,
       /enable\\s+notifications/i,
+      /allow\\s+notifications/i,
+      /show\\s+notifications/i,
       /your\\s+file/i,
       /install\\s+/i,
       /recommended/i,
@@ -75,10 +87,14 @@ function getAdblockScript() {
       /free\\s+download/i,
       /update\\s+required/i,
       /codec/i,
-      /player\\s+update/i
+      /player\\s+update/i,
+      /survey/i,
+      /claim\\s+(your\\s+)?(prize|reward)/i,
+      /limited\\s+time/i,
+      /tap\\s+allow/i
     ];
 
-    var AD_IFRAME_RE = /ads|doubleclick|popads|clickadu|exoclick|taboola|outbrain|sponsor|banner|propeller|adsterra|juicyads|hilltop|onclick|click\\./i;
+    var AD_IFRAME_RE = /ads|doubleclick|popads|clickadu|exoclick|taboola|outbrain|sponsor|banner|propeller|adsterra|juicyads|hilltop|onclick|popcash|profitableratecpm|tsyndicate|trafficstars|click\\./i;
 
     function textLooksLikeScam(t) {
       if (!t || t.length < 6 || t.length > 500) return false;
@@ -169,6 +185,27 @@ function getAdblockScript() {
       }
     }
 
+    function blockNotifications() {
+      try {
+        if (typeof Notification !== 'undefined') {
+          Notification.requestPermission = function() {
+            return Promise.resolve('denied');
+          };
+        }
+      } catch (e) {}
+      try {
+        if (navigator.permissions && navigator.permissions.query) {
+          var orig = navigator.permissions.query.bind(navigator.permissions);
+          navigator.permissions.query = function(desc) {
+            if (desc && desc.name === 'notifications') {
+              return Promise.resolve({ state: 'denied', onchange: null });
+            }
+            return orig(desc);
+          };
+        }
+      } catch (e) {}
+    }
+
     function run() {
       try {
         killLargeOverlays();
@@ -176,12 +213,13 @@ function getAdblockScript() {
       } catch (e) {}
     }
 
+    blockNotifications();
     run();
     var obs = new MutationObserver(function() { run(); });
     if (document.documentElement) {
       obs.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
     }
-    setInterval(run, 800);
+    setInterval(run, 700);
 
     try { window.open = function() { return null; }; } catch (e) {}
     try {

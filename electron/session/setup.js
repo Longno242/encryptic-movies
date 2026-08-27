@@ -26,7 +26,7 @@ const MEDIA_URL_PATTERNS = [
 ];
 
 const CHROME_UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36";
 
 function stripFramingHeaders(details, callback) {
   const headers = { ...details.responseHeaders };
@@ -143,7 +143,7 @@ function installPlayerTlsPolicy(playerSession) {
     const streamLike =
       /\.(m3u8|ts|mp4|webm|m4s)(\?|$)/i.test(url) ||
       url.includes("m3u8") ||
-      /speedsterwave|midwesteagle|ezvidapi|vidfast|cloudfront|akamai|googlevideo|workers\.dev/i.test(
+      /speedsterwave|midwesteagle|ezvidapi|vidfast|vidlink|moviesapi|multiembed|cloudfront|akamai|googlevideo|workers\.dev/i.test(
         host,
       );
     callback(streamLike ? 0 : -3);

@@ -188,6 +188,50 @@ export const PLAYER_SOURCES = [
       `https://ezvidapi.com/embed/tv/${id}/${season}/${ep}`,
   },
   {
+    id: "vidfast",
+    label: "VidFast",
+    tag: null,
+    note: null,
+    supportsProgress: true,
+    progressViaFrames: true,
+    movieUrl: (id) => `https://vidfast.pro/movie/${id}`,
+    tvUrl: (id, season, ep) =>
+      `https://vidfast.pro/tv/${id}/${season}/${ep}`,
+  },
+  {
+    id: "moviesapi",
+    label: "MoviesAPI",
+    tag: null,
+    note: null,
+    supportsProgress: true,
+    progressViaFrames: true,
+    movieUrl: (id) => `https://moviesapi.to/movie/${id}`,
+    tvUrl: (id, season, ep) =>
+      `https://moviesapi.to/tv/${id}/${season}/${ep}`,
+  },
+  {
+    id: "vidlink",
+    label: "VidLink",
+    tag: null,
+    note: null,
+    supportsProgress: true,
+    progressViaFrames: true,
+    movieUrl: (id) => `https://vidlink.pro/movie/${id}`,
+    tvUrl: (id, season, ep) =>
+      `https://vidlink.pro/tv/${id}/${season}/${ep}`,
+  },
+  {
+    id: "multiembed",
+    label: "MultiEmbed",
+    tag: null,
+    note: "SuperEmbed",
+    supportsProgress: true,
+    progressViaFrames: true,
+    movieUrl: (id) => `https://multiembed.mov/?video_id=${id}&tmdb=1`,
+    tvUrl: (id, season, ep) =>
+      `https://multiembed.mov/?video_id=${id}&tmdb=1&s=${season}&e=${ep}`,
+  },
+  {
     id: "vidsrc-anime",
     label: "VidSrc (Anime)",
     tag: "ANIME",
@@ -271,6 +315,10 @@ const ANIME_SOURCE_ORDER = [
   "2embed-anime",
   "videasy",
   "videasy-anime",
+  "vidfast",
+  "moviesapi",
+  "vidlink",
+  "multiembed",
   "vidplus",
   "vidnest",
   "allmanga",
@@ -302,6 +350,8 @@ const SUB_DUB_SOURCES = [
   "2embed-anime",
   "videasy",
   "videasy-anime",
+  "vidfast",
+  "vidlink",
   "vidplus",
   "vidnest",
   "allmanga",
@@ -416,6 +466,23 @@ export const getSourceUrl = (sourceId, type, id, season, ep, opts = {}) => {
       lang: subLang,
       ds_lang: subLang,
     });
+  } else if (sourceId === "vidfast") {
+    url = withQuery(url, {
+      autoPlay: "true",
+      autoplay: "true",
+    });
+  } else if (sourceId === "vidlink") {
+    url = withQuery(url, {
+      autoplay: "true",
+      title: "false",
+      poster: "true",
+    });
+  } else if (sourceId === "moviesapi") {
+    url = withQuery(url, {
+      autoplay: "1",
+    });
+  } else if (sourceId === "multiembed") {
+    /* query already set in movieUrl/tvUrl */
   } else if (sourceId === "neon") {
     url = withQuery(url, {
       autoplay: "1",
@@ -447,6 +514,10 @@ export const NEEDS_INTERCEPT = [
   "vidplus",
   "vidnest",
   "neon",
+  "vidfast",
+  "moviesapi",
+  "vidlink",
+  "multiembed",
 ];
 
 export const ANIME_DEFAULT_SOURCE = "vidsrc";

@@ -2,6 +2,7 @@ import { useCallback, useRef } from "react";
 
 /**
  * Auto-advance embed sources when the webview fails to load.
+ * Tracks tried sources so failover never loops (e.g. A→Neon→A).
  */
 export function usePlayerSourceFallback({
   enabled,
@@ -18,10 +19,12 @@ export function usePlayerSourceFallback({
   const failStreak = useRef(0);
   const slowFailTimer = useRef(null);
   const stuckHandled = useRef(false);
+  const triedSources = useRef(new Set());
 
   const onLoadSuccess = useCallback(() => {
     failStreak.current = 0;
     stuckHandled.current = false;
+    triedSources.current.clear();
     if (slowFailTimer.current) {
       clearTimeout(slowFailTimer.current);
       slowFailTimer.current = null;
@@ -31,10 +34,27 @@ export function usePlayerSourceFallback({
   }, [playerSource, onRemember, onSourceSuccess]);
 
   const tryFailover = useCallback(() => {
-    const next =
-      primaryFailoverSource && primaryFailoverSource !== playerSource
-        ? primaryFailoverSource
-        : getNextSource(playerSource);
+    triedSources.current.add(playerSource);
+
+    let next = null;
+    if (
+      primaryFailoverSource &&
+      !triedSources.current.has(primaryFailoverSource)
+    ) {
+      next = primaryFailoverSource;
+    } else {
+      let candidate = getNextSource(playerSource);
+      const seen = new Set();
+      while (candidate && !seen.has(candidate)) {
+        seen.add(candidate);
+        if (!triedSources.current.has(candidate)) {
+          next = candidate;
+          break;
+        }
+        candidate = getNextSource(candidate);
+      }
+    }
+
     if (next && next !== playerSource) {
       failStreak.current = 0;
       onFailover?.(playerSource, next);
@@ -60,7 +80,7 @@ export function usePlayerSourceFallback({
       failStreak.current += 1;
       if (failStreak.current >= failThreshold) tryFailover();
     },
-    [enabled, tryFailover],
+    [enabled, failThreshold, tryFailover],
   );
 
   const onLoadStuck = useCallback(() => {
@@ -72,6 +92,7 @@ export function usePlayerSourceFallback({
   const resetFallback = useCallback(() => {
     failStreak.current = 0;
     stuckHandled.current = false;
+    triedSources.current.clear();
     if (slowFailTimer.current) {
       clearTimeout(slowFailTimer.current);
       slowFailTimer.current = null;

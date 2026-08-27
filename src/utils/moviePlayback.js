@@ -2,11 +2,29 @@ import { storage } from "./storage";
 import { getTitleSource, setTitleSource } from "./titleMeta";
 
 export const FAILOVER_SOURCE = "neon";
-export const MOVIE_SOURCE_CHAIN = ["vidsrc", "videasy", "2embed", "neon"];
+export const MOVIE_SOURCE_CHAIN = [
+  "vidsrc",
+  "neon",
+  "videasy",
+  "vidfast",
+  "moviesapi",
+  "vidlink",
+  "multiembed",
+  "2embed",
+];
 
+/** Walk the movie source chain; returns null when exhausted. */
+export function getNextMovieSource(currentId) {
+  const idx = MOVIE_SOURCE_CHAIN.indexOf(currentId);
+  if (idx === -1) return MOVIE_SOURCE_CHAIN[0];
+  if (idx >= MOVIE_SOURCE_CHAIN.length - 1) return null;
+  return MOVIE_SOURCE_CHAIN[idx + 1];
+}
+
+/** @deprecated Prefer getNextMovieSource — kept for callers that jump to Neon first. */
 export function getFailoverSource(currentId) {
   if (currentId !== FAILOVER_SOURCE) return FAILOVER_SOURCE;
-  return MOVIE_SOURCE_CHAIN.find((id) => id !== currentId) || "vidsrc";
+  return getNextMovieSource(FAILOVER_SOURCE);
 }
 
 const MEMORY_PREFIX = "movieSourceOk_";
@@ -23,8 +41,4 @@ export function getRememberedMovieSource(tmdbId) {
   const saved = storage.get(`${MEMORY_PREFIX}${tmdbId}`);
   if (saved && MOVIE_SOURCE_CHAIN.includes(saved)) return saved;
   return null;
-}
-
-export function getNextMovieSource(currentId) {
-  return getFailoverSource(currentId);
 }

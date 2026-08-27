@@ -1,0 +1,8 @@
+extensions:
+  - addsTo:
+      pack: codeql/javascript-all
+      extensible: barrierModel
+    data:
+      - ["./safeRemoteUrl", "Member[assertSafeRemoteUrl].ReturnValue", "request-forgery"]
+      - ["./safeRemoteUrl", "Member[hrefFromSafeUrl].ReturnValue", "request-forgery"]
+      - ["./safeRemoteUrl", "Member[resolveSafeRemoteUrl].ReturnValue", "request-forgery"]

@@ -1,6 +1,6 @@
 /**
- * SSRF guards for stream download requests.
- * Return values are registered as CodeQL request-forgery barriers.
+ * SSRF guards and validated HTTP fetches for stream downloads.
+ * Return values / exports here are CodeQL request-forgery barriers.
  */
 
 const { URL } = require("url");
@@ -80,8 +80,98 @@ function resolveSafeRemoteUrl(base, relative) {
   return assertSafeRemoteUrl(resolved.href);
 }
 
+/**
+ * Perform a validated GET inside this module so outbound URLs always pass SSRF checks.
+ * @param {import('electron').Net} net
+ * @param {import('electron').Session} playerSession
+ * @param {string} url
+ * @param {{ headers?: Record<string, string>, timeoutMs?: number }} opts
+ */
+function requestBufferElectron(net, playerSession, url, opts = {}) {
+  const { headers = {}, timeoutMs = 120000, onRateLimit } = opts;
+  const safeParsed = assertSafeRemoteUrl(url);
+  const safeUrl = hrefFromSafeUrl(safeParsed);
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const done = (fn, val) => {
+      if (settled) return;
+      settled = true;
+      fn(val);
+    };
+    const timer = setTimeout(() => {
+      try {
+        request.abort();
+      } catch {
+        /* ignore */
+      }
+      done(reject, new Error("Request timed out"));
+    }, timeoutMs);
+
+    const request = net.request({
+      method: "GET",
+      url: safeUrl,
+      session: playerSession,
+      redirect: "manual",
+    });
+    for (const [k, v] of Object.entries(headers)) {
+      if (v) request.setHeader(k, String(v));
+    }
+
+    request.on("response", (response) => {
+      const code = response.statusCode || 0;
+      if (code >= 300 && code < 400) {
+        const loc = response.headers.location?.[0] || response.headers.Location?.[0];
+        if (loc) {
+          clearTimeout(timer);
+          let redirectParsed;
+          try {
+            redirectParsed = resolveSafeRemoteUrl(safeParsed, loc);
+          } catch (e) {
+            done(reject, e);
+            return;
+          }
+          requestBufferElectron(net, playerSession, redirectParsed.href, opts)
+            .then((b) => done(resolve, b))
+            .catch((e) => done(reject, e));
+          return;
+        }
+      }
+      if (code !== 200) {
+        clearTimeout(timer);
+        if (code === 429 && onRateLimit) onRateLimit(response);
+        done(
+          reject,
+          new Error(
+            code === 429
+              ? "HTTP 429"
+              : `HTTP ${code} — stream host blocked the download`,
+          ),
+        );
+        return;
+      }
+      const chunks = [];
+      response.on("data", (c) => chunks.push(c));
+      response.on("end", () => {
+        clearTimeout(timer);
+        done(resolve, Buffer.concat(chunks));
+      });
+      response.on("error", (e) => {
+        clearTimeout(timer);
+        done(reject, e);
+      });
+    });
+    request.on("error", (e) => {
+      clearTimeout(timer);
+      done(reject, e);
+    });
+    request.end();
+  });
+}
+
 module.exports = {
   assertSafeRemoteUrl,
   hrefFromSafeUrl,
   resolveSafeRemoteUrl,
+  requestBufferElectron,
 };

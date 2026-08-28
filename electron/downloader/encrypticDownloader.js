@@ -16,6 +16,7 @@ const {
   assertSafeRemoteUrl,
   hrefFromSafeUrl,
   resolveSafeRemoteUrl,
+  requestBufferElectron: validatedElectronRequest,
 } = require("./safeRemoteUrl");
 
 /** One segment at a time — avoids CDN HTTP 429 rate limits */
@@ -136,83 +137,11 @@ function partialDirFor(outputDir, title) {
 }
 
 async function requestBufferElectron(url, { headers = {}, timeoutMs = 120000 } = {}) {
-  const safeParsed = assertSafeRemoteUrl(url);
-  const safeUrl = hrefFromSafeUrl(safeParsed);
   await paceBeforeRequest();
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const done = (fn, val) => {
-      if (settled) return;
-      settled = true;
-      fn(val);
-    };
-    const timer = setTimeout(() => {
-      try {
-        request.abort();
-      } catch {
-        /* ignore */
-      }
-      done(reject, new Error("Request timed out"));
-    }, timeoutMs);
-
-    const request = net.request({
-      method: "GET",
-      url: safeUrl,
-      session: playerSession(),
-      redirect: "manual",
-    });
-    for (const [k, v] of Object.entries(headers)) {
-      if (v) request.setHeader(k, String(v));
-    }
-
-    request.on("response", (response) => {
-      const code = response.statusCode || 0;
-      if (code >= 300 && code < 400) {
-        const loc = response.headers.location?.[0] || response.headers.Location?.[0];
-        if (loc) {
-          clearTimeout(timer);
-          let redirectParsed;
-          try {
-            redirectParsed = resolveSafeRemoteUrl(safeParsed, loc);
-          } catch (e) {
-            done(reject, e);
-            return;
-          }
-          requestBufferElectron(redirectParsed.href, { headers, timeoutMs })
-            .then((b) => done(resolve, b))
-            .catch((e) => done(reject, e));
-          return;
-        }
-      }
-      if (code !== 200) {
-        clearTimeout(timer);
-        if (code === 429) noteRateLimit(parseRetryAfterMs(response));
-        done(
-          reject,
-          new Error(
-            code === 429
-              ? "HTTP 429"
-              : `HTTP ${code} — stream host blocked the download`,
-          ),
-        );
-        return;
-      }
-      const chunks = [];
-      response.on("data", (c) => chunks.push(c));
-      response.on("end", () => {
-        clearTimeout(timer);
-        done(resolve, Buffer.concat(chunks));
-      });
-      response.on("error", (e) => {
-        clearTimeout(timer);
-        done(reject, e);
-      });
-    });
-    request.on("error", (e) => {
-      clearTimeout(timer);
-      done(reject, e);
-    });
-    request.end();
+  return validatedElectronRequest(net, playerSession(), url, {
+    headers,
+    timeoutMs,
+    onRateLimit: (response) => noteRateLimit(parseRetryAfterMs(response)),
   });
 }
 

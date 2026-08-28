@@ -1,8 +1,5 @@
 name: encryptic-movies-codeql
 
-queries:
-  - uses: security-and-quality
-
 packs:
   javascript-typescript:
     - ./

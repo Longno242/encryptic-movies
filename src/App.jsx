@@ -392,9 +392,17 @@ export default function App() {
         const storedKey = boot.apiKey || null;
         setSavedApiKey(storedKey);
         setApiKeyStatus(boot.apiKeyStatus);
-        setCatalogSetupRequired(!!gate?.required);
-        const mode = getMetadataMode();
-        setApiKey(mode === "tmdb" && storedKey ? storedKey : null);
+        if (storedKey) {
+          setMetadataMode("tmdb");
+          setMetadataModeState("tmdb");
+          setApiKey(storedKey);
+          setCatalogSetupRequired(false);
+          void window.electron?.clearCatalogSetupRequired?.();
+        } else {
+          setCatalogSetupRequired(!!gate?.required);
+          const mode = getMetadataMode();
+          setApiKey(mode === "tmdb" && storedKey ? storedKey : null);
+        }
         setApiKeyLoaded(true);
       })
       .catch(() => {

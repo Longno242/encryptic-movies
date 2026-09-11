@@ -1426,10 +1426,12 @@ export default function TVPage({
     };
   }, [playing, playerSource, item.id, selectedEp?.episode_number]);
 
+  // Reset failover memory + AniList mode only when the episode/title changes.
+  // Including playerSource here cleared triedSources on every hop and looped servers.
   useEffect(() => {
     resetFallback();
     setAnimePlaybackMode("tmdb");
-  }, [item.id, selectedSeason, selectedEp?.episode_number, playerSource, resetFallback]);
+  }, [item.id, selectedSeason, selectedEp?.episode_number, resetFallback]);
 
   // ── AniSkip: fetch timings when episode changes ───────────────────────────
   useEffect(() => {
@@ -2276,7 +2278,6 @@ export default function TVPage({
                   }
                   partition="persist:player"
                   allowpopups="false"
-                  sandbox="allow-scripts allow-same-origin allow-forms"
                   style={{
                     position: "absolute",
                     inset: 0,

@@ -80,8 +80,7 @@ function getAdblockScript() {
       /seconds?\\s+left/i,
       /complete\\s+(the\\s+)?step/i,
       /verify\\s+you/i,
-      /human\\s+verification/i,
-      /captcha/i,
+      // Keep Cloudflare / captcha challenges intact so embeds can unlock.
       /unlock\\s+content/i,
       /watch\\s+now\\s+free/i,
       /free\\s+download/i,
@@ -161,12 +160,8 @@ function getAdblockScript() {
         if (isVideoRelated(el) || isAppUi(el)) continue;
         if (el.tagName === 'IFRAME') {
           var src = (el.src || el.getAttribute('src') || '').toLowerCase();
+          // Only remove known ad iframe hosts — never kill large/high-z player iframes.
           if (AD_IFRAME_RE.test(src)) { hideEl(el); continue; }
-          var fr = el.getBoundingClientRect();
-          if (fr.width > 120 && fr.height > 120) {
-            var z = parseInt(window.getComputedStyle(el).zIndex, 10) || 0;
-            if (z > 100) hideEl(el);
-          }
           continue;
         }
         var t = (el.innerText || el.textContent || '').trim();

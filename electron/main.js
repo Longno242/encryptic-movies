@@ -19,6 +19,7 @@ const downloadsIpc = require("./ipc/downloads");
 const subtitlesIpc = require("./ipc/subtitles");
 const allmangaIpc = require("./ipc/allmanga");
 const playerIpc = require("./ipc/player");
+const { seedBuiltinTmdbKey } = require("./seedTmdb");
 const {
   applyPendingUpdateCleanup,
 } = require("./update/windowsPortable");
@@ -564,6 +565,12 @@ if (!hasLock) {
       await storageIpc.recoverCatalogSetupIfKeyPresent();
     } catch (err) {
       console.error("[migration] catalog recovery failed:", err?.message || err);
+    }
+    // Built-in TMDB token — skip first-run key / catalog chooser.
+    try {
+      await seedBuiltinTmdbKey(storageIpc);
+    } catch (err) {
+      console.error("[tmdb] builtin seed failed:", err?.message || err);
     }
     storageIpc.recordAppVersionSeen();
     createMainWindow();

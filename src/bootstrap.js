@@ -39,7 +39,18 @@ export async function runAppBootstrap(onStatus) {
     status("Initializing…");
     bootStep("Opening secure storage…", 30, "secure");
     status("Opening secure storage…");
-    const val = await withTimeout(secureStorage.get("apikey"), 8000, null);
+    const valRaw = await withTimeout(secureStorage.get("apikey"), 8000, null);
+    let val = valRaw || null;
+
+    // If secure store is empty, re-seed the built-in TMDB token from main.
+    if (!val && typeof window !== "undefined" && window.electron?.ensureBuiltinTmdb) {
+      try {
+        await withTimeout(window.electron.ensureBuiltinTmdb(), 8000, null);
+        val = (await withTimeout(secureStorage.get("apikey"), 8000, null)) || null;
+      } catch {
+        /* ignore */
+      }
+    }
 
     bootStep("Connecting to TMDB…", 50, "api");
     status("Connecting to TMDB…");

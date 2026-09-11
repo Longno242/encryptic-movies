@@ -485,7 +485,9 @@ function register(getMainWindow, { writeSecretMigration, getDownloads }) {
           const text = (document.body && document.body.innerText || '')
             .toLowerCase()
             .slice(0, 6000);
-          const unavailable = /not available|unavailable|no sources|not found|dead link|could not find|embed.*disabled|video unavailable/.test(
+          // Only treat clear full-page failure copy as unavailable — soft wording
+          // in embed chrome was falsely triggering failover.
+          const unavailable = /video (is )?unavailable|this (video|content) (is )?not available|no sources found|dead link|embed (is )?disabled|could not find (this )?video/.test(
             text,
           );
           const v = document.querySelector('video');

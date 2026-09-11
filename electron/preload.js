@@ -75,6 +75,7 @@ contextBridge.exposeInMainWorld("electron", {
   isCatalogSetupRequired: () => ipcRenderer.invoke("is-catalog-setup-required"),
   clearCatalogSetupRequired: () =>
     ipcRenderer.invoke("clear-catalog-setup-required"),
+  ensureBuiltinTmdb: () => ipcRenderer.invoke("ensure-builtin-tmdb"),
 
   // Webview fullscreen
   onWebviewEnterFullscreen: (cb) => {

@@ -1,7 +1,18 @@
 # Encryptic Movies v1.0.17
 
+## Getting started
+
+- **No TMDB setup screen** — The app signs into the catalog automatically so you can browse movies and TV immediately.
+- **Support** — Sidebar → Support opens the Encryptic contact page in your browser.
+
+## Player & Shield
+
+- **Source failover** — Switching servers no longer resets the tried list mid-stream, so dead sources are skipped cleanly.
+- **Shield** — Safer handling of large player iframes, captcha/human-verification pages, and allowlisted media hosts (`users.videasy.net`, etc.).
+- **Anime** — Avoids broken `/tv/0/...` routes; prefers AniList builders when no TMDB id is available.
+- **Health checks** — Softened false “unavailable” detection that could kill working streams.
+
 ## Security
 
-- **Dependabot** — Electron 41.10.x (sandbox iframe fix), postcss 8.5.23, nanoid 3.3.18, undici 6.28.0, js-yaml 4.3.1; installer deps aligned with electron-builder 26.15.7.
-- **CodeQL** — Downloader validates redirect targets before following; CodeQL workflow now runs on `master`.
-- **extract-zip** — Installer Electron upgrade removes vulnerable transitive `extract-zip` in favor of `@electron-internal/extract-zip`.
+- **Dependabot** — Electron 41.10.x, postcss, nanoid, undici, js-yaml; installer deps aligned with electron-builder 26.15.7.
+- **CodeQL** — Downloader validates redirect targets; workflow runs on `master`.

@@ -23,9 +23,13 @@ export function isTmdbMetadataMode() {
 
 /** User must pick free or TMDB on the catalog screen before the app loads. */
 export function needsCatalogSetup(apiKey) {
+  if (apiKey) {
+    if (getMetadataMode() !== "tmdb") setMetadataMode("tmdb");
+    return false;
+  }
   const mode = getMetadataMode();
   if (mode === "free") return false;
-  if (mode === "tmdb") return !apiKey;
+  if (mode === "tmdb") return true;
   return true;
 }
 
@@ -35,6 +39,10 @@ export function hasActiveCatalog(apiKey) {
 
 /** Post-update gate: must pick free or TMDB before the app loads. */
 export function mustShowCatalogSetup(apiKey, catalogSetupRequired) {
+  if (apiKey) {
+    if (getMetadataMode() !== "tmdb") setMetadataMode("tmdb");
+    return false;
+  }
   if (catalogSetupRequired) return true;
   return needsCatalogSetup(apiKey);
 }

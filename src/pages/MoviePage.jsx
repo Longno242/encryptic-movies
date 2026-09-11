@@ -631,9 +631,11 @@ export default function MoviePage({
     if (!playing) clearDiscordPresence();
   }, [playing]);
 
+  // Only reset tried-sources when the title changes — NOT when failover hops
+  // to the next playerSource (that was clearing memory and looping servers).
   useEffect(() => {
     resetFallback();
-  }, [item.id, playerSource, resetFallback]);
+  }, [item.id, resetFallback]);
 
   useEffect(() => {
     if (playing && playerSource) reportTrying(playerSource);
@@ -1200,7 +1202,6 @@ export default function MoviePage({
               }
               partition="persist:player"
               allowpopups="false"
-              sandbox="allow-scripts allow-same-origin allow-forms"
               style={{
                 position: "absolute",
                 inset: 0,

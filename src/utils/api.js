@@ -412,7 +412,13 @@ export const getSourceUrl = (sourceId, type, id, season, ep, opts = {}) => {
         sourceId === "2embed" ||
         sourceId === "2embed-anime" ||
         sourceId === "vidplus");
-    if (useAnilist) {
+    const anilistCapable =
+      sourceId === "vidsrc" ||
+      sourceId === "vidsrc-anime" ||
+      sourceId === "2embed" ||
+      sourceId === "2embed-anime" ||
+      sourceId === "vidplus";
+    if (useAnilist || ((!id || Number(id) === 0) && anilistId && anilistCapable)) {
       return buildAnimeEmbedUrl(sourceId, {
         anilistId,
         malId: opts.malId,
@@ -424,6 +430,8 @@ export const getSourceUrl = (sourceId, type, id, season, ep, opts = {}) => {
         reloadToken: opts.reloadToken,
       });
     }
+    // Never build /tv/0/... — that embeds a dead URL and looks like a hung player.
+    if (!id || Number(id) === 0) return "about:blank";
     return buildAnimeTmdbFallbackUrl(sourceId, id, tmdbSeason, tmdbEp, {
       dubMode,
       preferredLang,

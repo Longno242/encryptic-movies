@@ -251,6 +251,13 @@ export default function Sidebar({
       <div className="sidebar-bottom">
         <NavBtn
           icon={<HelpIcon />}
+          label="Support"
+          onClick={() =>
+            window.electron?.openExternal?.("https://www.longno.co.uk/contact")
+          }
+        />
+        <NavBtn
+          icon={<HelpIcon />}
           label="Docs"
           onClick={onShowDocs}
         />

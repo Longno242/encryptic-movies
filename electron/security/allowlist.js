@@ -35,6 +35,8 @@ const EXACT_HOSTS = new Set([
   "youtube.com",
   "youtu.be",
   "www.youtube-nocookie.com",
+  "www.longno.co.uk",
+  "longno.co.uk",
   ...INVIDIOUS_HOSTS,
 ]);
 
@@ -46,6 +48,7 @@ const HOST_SUFFIXES = [
   "subdl.com",
   "wyzie.io",
   "wyzie.ru",
+  "longno.co.uk",
 ];
 
 function normalizeHost(hostname) {

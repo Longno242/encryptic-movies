@@ -447,6 +447,19 @@ function register() {
     return { ok: true };
   });
 
+  ipcMain.handle("ensure-builtin-tmdb", async () => {
+    try {
+      const { seedBuiltinTmdbKey } = require("../seedTmdb");
+      const result = await seedBuiltinTmdbKey({
+        secureStoreSet,
+        setCatalogSetupRequired,
+      });
+      return { ok: !!result?.ok };
+    } catch (e) {
+      return { ok: false, error: e?.message || "failed" };
+    }
+  });
+
   ipcMain.handle("secure-store-get", async (_, key) => {
     try {
       return { ok: true, value: await secureStoreGet(key) };
@@ -673,4 +686,6 @@ module.exports = {
   loadScheduledBackupSettings,
   shouldRunScheduledBackup,
   resetCatalogChooser,
+  secureStoreSet,
+  secureStoreGet,
 };

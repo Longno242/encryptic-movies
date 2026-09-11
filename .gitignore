@@ -2,6 +2,7 @@ node_modules/
 temp/
 .env
 .env.*
+!.env.example
 download_config.ini
 dist/
 installer/node_modules/

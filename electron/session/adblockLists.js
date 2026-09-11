@@ -29,7 +29,6 @@ const BLOCKED_HOST_PATTERNS = [
   "*://b7510.com/*",
   "*://gt.unbrownunflat.com/*",
   "*://im.malocacomals.com/*",
-  "*://users.videasy.net/*",
   "*://nf.sixmossin.com/*",
   "*://realizationnewestfangs.com/*",
   "*://acscdn.com/*",
@@ -50,8 +49,6 @@ const BLOCKED_HOST_PATTERNS = [
   "*://usrpubtrk.com/*",
   "*://adexchangeclear.com/*",
   "*://rzjzjnavztycv.online/*",
-  "*://tmstr4.cloudnestra.com/*",
-  "*://tmstr4.neonhorizonworkshops.com/*",
   "*://*.popads.net/*",
   "*://*.clickadu.com/*",
   "*://*.exoclick.com/*",
@@ -387,6 +384,9 @@ function classifyRequestUrl(url, resourceType = "") {
   const host = parsed.hostname.toLowerCase();
   const full = `${host}${parsed.pathname}${parsed.search}`.toLowerCase();
   const rt = resourceType || "";
+
+  // Allowlisted stream/CDN hosts always win over block patterns.
+  if (isAllowedMediaHost(host)) return "allow";
 
   if (matchesBlockedHostPattern(host)) return "block";
 
